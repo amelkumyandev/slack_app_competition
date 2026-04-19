@@ -65,7 +65,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   });
 
   const contentType = response.headers.get("content-type") ?? "";
-  const hasJson = contentType.includes("application/json");
+  const hasJson = /\bapplication\/(?:[\w.-]+\+)?json\b/i.test(contentType);
   const payload = hasJson ? await response.json() : null;
 
   if (!response.ok) {
