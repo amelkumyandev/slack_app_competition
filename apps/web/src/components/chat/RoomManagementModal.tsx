@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type {
   InviteToRoomRequest,
   MessageResponse,
@@ -13,6 +14,39 @@ import type {
   RoomMemberResponse,
   UpdateRoomAdminRequest,
 } from "@/lib/api/contracts";
+import {
+  Close as CloseIcon,
+  DeleteForever as DeleteForeverIcon,
+  GppGood as GppGoodIcon,
+  Group as GroupIcon,
+  PersonOff as PersonOffIcon,
+  Search as SearchIcon,
+  Send as SendIcon,
+  Settings as SettingsIcon,
+  Shield as ShieldIcon,
+} from "@mui/icons-material";
+import {
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  IconButton,
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
+  Stack,
+  Tab,
+  Tabs,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { ApiClientError, apiRequest } from "@/lib/api/client";
 
 type RoomManagementModalProps = {
@@ -64,23 +98,6 @@ export function RoomManagementModal({
 
     void loadRoomDetails();
   }, [isOpen, loadRoomDetails]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen, onClose]);
 
   const normalizedSearch = searchDraft.trim().toLowerCase();
   const filteredMembers = useMemo(
@@ -266,456 +283,553 @@ export function RoomManagementModal({
     );
   }
 
-  if (!isOpen) {
-    return null;
-  }
-
-  const permissions = roomDetails?.permissions;
-
   return (
-    <div aria-modal="true" className="modal-backdrop" onClick={onClose} role="dialog">
-      <section className="room-modal" onClick={(event) => event.stopPropagation()}>
-        <header className="room-modal-header">
-          <div>
-            <span className="panel-kicker">Manage room</span>
-            <h2># {room.name}</h2>
-            <p className="panel-copy">
+    <Dialog
+      fullWidth
+      maxWidth="lg"
+      onClose={onClose}
+      open={isOpen}
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 3,
+          },
+        },
+      }}
+    >
+      <DialogTitle sx={{ pb: 1.5 }}>
+        <Stack direction="row" spacing={2} sx={{ alignItems: "flex-start", justifyContent: "space-between" }}>
+          <Box>
+            <Typography variant="overline" color="text.secondary">
+              Manage room
+            </Typography>
+            <Typography variant="h2" sx={{ mt: 0.5 }}>
+              # {room.name}
+            </Typography>
+            <Typography color="text.secondary" sx={{ mt: 1 }}>
               {room.description ?? "Use this modal to review members, invitations, bans, and safe room actions."}
-            </p>
-          </div>
-          <button aria-label="Close room manager" className="ghost-link" onClick={onClose} type="button">
-            Close
-          </button>
-        </header>
+            </Typography>
+          </Box>
+          <IconButton aria-label="Close room manager" onClick={onClose}>
+            <CloseIcon />
+          </IconButton>
+        </Stack>
+      </DialogTitle>
 
-        <div className="room-modal-toolbar">
-          <div className="toggle-row" role="tablist" aria-label="Room management tabs">
-            {[
-              ["members", `Members (${roomDetails?.members.length ?? 0})`],
-              ["admins", `Admins (${roomDetails?.admins.length ?? 0})`],
-              ["invitations", `Invites (${roomDetails?.pendingInvitations.length ?? 0})`],
-              ["bans", `Bans (${roomDetails?.bans.length ?? 0})`],
-              ["settings", "Settings"],
-            ].map(([tab, label]) => (
-              <button
-                className={activeTab === tab ? "toggle-button active" : "toggle-button"}
-                key={tab}
-                onClick={() => setActiveTab(tab as RoomTab)}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+      <DialogContent sx={{ pt: 0, pb: 3 }}>
+        <Stack spacing={2}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1.5}
+            sx={{ alignItems: { md: "center" }, justifyContent: "space-between" }}
+          >
+            <Tabs value={activeTab} onChange={(_, value: RoomTab) => setActiveTab(value)} variant="scrollable">
+              <Tab value="members" label={`Members (${roomDetails?.members.length ?? 0})`} />
+              <Tab value="admins" label={`Admins (${roomDetails?.admins.length ?? 0})`} />
+              <Tab value="invitations" label={`Invites (${roomDetails?.pendingInvitations.length ?? 0})`} />
+              <Tab value="bans" label={`Bans (${roomDetails?.bans.length ?? 0})`} />
+              <Tab value="settings" label="Settings" />
+            </Tabs>
 
-          {activeTab !== "settings" ? (
-            <label className="field room-search-field">
-              <span>Member search</span>
-              <input
+            {activeTab !== "settings" ? (
+              <TextField
+                size="small"
+                value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
                 placeholder="Filter by username"
-                type="search"
-                value={searchDraft}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+                sx={{ minWidth: { md: 280 } }}
               />
-            </label>
+            ) : null}
+          </Stack>
+
+          {notice ? <Alert severity="success">{notice}</Alert> : null}
+          {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
+
+          {loading ? (
+            <Box sx={{ py: 6, textAlign: "center" }}>
+              <Typography color="text.secondary">Loading room management details…</Typography>
+            </Box>
           ) : null}
-        </div>
 
-        {notice ? <div className="feedback-banner success-banner">{notice}</div> : null}
-        {errorMessage ? <div className="feedback-banner error-banner">{errorMessage}</div> : null}
-
-        {loading ? (
-          <div className="panel-skeleton">
-            <div className="skeleton-line skeleton-title" />
-            <div className="skeleton-line" />
-            <div className="skeleton-line" />
-          </div>
-        ) : null}
-
-        {!loading && roomDetails ? (
-          <div className="room-modal-content">
-            {activeTab === "members" ? (
-              <div className="room-tab-grid">
-                <article className="room-tab-card">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">People in the room</span>
-                      <h3>Members</h3>
-                    </div>
-                    <span className="counter-pill">{filteredMembers.length}</span>
-                  </div>
-
-                  {filteredMembers.length === 0 ? (
-                    <div className="empty-state">
-                      <strong>No members match the current search.</strong>
-                      <p>Try another username filter or switch tabs.</p>
-                    </div>
-                  ) : (
-                    <div className="room-entity-list">
-                      {filteredMembers.map((member) => (
-                        <article className="room-entity-card" key={member.userId}>
-                          <div>
-                            <strong>{member.userName}</strong>
-                            <span>Joined {formatDateTime(member.joinedAtUtc)}</span>
-                          </div>
-                          <div className="session-badges">
-                            {member.isOwner ? <span className="chip chip-accent">Owner</span> : null}
-                            {member.isAdmin ? <span className="chip chip-muted">Admin</span> : null}
-                            {member.userName === currentUserName ? <span className="chip chip-online">You</span> : null}
-                            {permissions?.canRemoveMembers && !member.isOwner ? (
-                              <button
-                                className="danger-button compact-button"
-                                disabled={pendingAction === `remove-member-${member.userId}`}
-                                onClick={() => void handleRemoveMember(member)}
-                                type="button"
-                              >
-                                {pendingAction === `remove-member-${member.userId}` ? "Removing..." : "Remove"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </article>
-
-                <article className="room-tab-card side-panel">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Moderation note</span>
-                      <h3>Remove with room ban</h3>
-                    </div>
-                  </div>
-
-                  <p className="panel-copy">
-                    Removing a user from a room also bans them until an explicit unban. Add an
-                    optional reason below before using the remove action from the member list.
-                  </p>
-
-                  <label className="field">
-                    <span>Removal reason</span>
-                    <textarea
-                      onChange={(event) => setMemberRemovalReason(event.target.value)}
-                      placeholder="Optional moderation reason"
-                      rows={4}
-                      value={memberRemovalReason}
-                    />
-                  </label>
-                </article>
-              </div>
-            ) : null}
-
-            {activeTab === "admins" ? (
-              <div className="room-tab-grid">
-                <article className="room-tab-card">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Trusted operators</span>
-                      <h3>Admins</h3>
-                    </div>
-                    <span className="counter-pill">{filteredAdmins.length}</span>
-                  </div>
-
-                  {filteredAdmins.length === 0 ? (
-                    <div className="empty-state">
-                      <strong>No admins match the current search.</strong>
-                      <p>Try another username or clear the filter.</p>
-                    </div>
-                  ) : (
-                    <div className="room-entity-list">
-                      {filteredAdmins.map((admin) => (
-                        <article className="room-entity-card" key={admin.userId}>
-                          <div>
-                            <strong>{admin.userName}</strong>
-                            <span>{admin.isOwner ? "Room owner" : `Granted ${formatDateTime(admin.grantedAtUtc)}`}</span>
-                          </div>
-                          <div className="session-badges">
-                            {admin.isOwner ? <span className="chip chip-accent">Owner</span> : null}
-                            {admin.userName === currentUserName ? <span className="chip chip-online">You</span> : null}
-                            {permissions?.canManageAdmins && !admin.isOwner ? (
-                              <button
-                                className="danger-button compact-button"
-                                disabled={pendingAction === `revoke-admin-${admin.userId}`}
-                                onClick={() => void handleRevokeAdmin(admin)}
-                                type="button"
-                              >
-                                {pendingAction === `revoke-admin-${admin.userId}` ? "Saving..." : "Revoke"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </article>
-
-                <article className="room-tab-card side-panel">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Grant access</span>
-                      <h3>Add an admin by username</h3>
-                    </div>
-                  </div>
-
-                  {permissions?.canManageAdmins ? (
-                    <form
-                      className="auth-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void handleGrantAdminSubmit();
-                      }}
+          {!loading && roomDetails ? (
+            <>
+              {activeTab === "members" ? (
+                <TwoColumnDialog
+                  left={
+                    <EntityListCard
+                      count={filteredMembers.length}
+                      icon={<GroupIcon fontSize="small" />}
+                      title="Members"
+                      subtitle="People in the room"
                     >
-                      <label className="field">
-                        <span>Username</span>
-                        <input
-                          onChange={(event) => setAdminDraft(event.target.value)}
-                          placeholder="username"
-                          type="text"
-                          value={adminDraft}
-                        />
-                      </label>
-                      <button className="primary-button" disabled={pendingAction === "grant-admin"} type="submit">
-                        {pendingAction === "grant-admin" ? "Granting..." : "Grant admin"}
-                      </button>
-                    </form>
-                  ) : (
-                    <div className="empty-state">
-                      <strong>You cannot change room admins.</strong>
-                      <p>Only the room owner can grant or revoke admin access.</p>
-                    </div>
-                  )}
-                </article>
-              </div>
-            ) : null}
-
-            {activeTab === "invitations" ? (
-              <div className="room-tab-grid">
-                <article className="room-tab-card">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Pending invites</span>
-                      <h3>Outstanding invitations</h3>
-                    </div>
-                    <span className="counter-pill">{filteredInvitations.length}</span>
-                  </div>
-
-                  {filteredInvitations.length === 0 ? (
-                    <div className="empty-state">
-                      <strong>No pending invitations match this filter.</strong>
-                      <p>Invite another user or clear the search input.</p>
-                    </div>
-                  ) : (
-                    <div className="room-entity-list">
-                      {filteredInvitations.map((invitation) => (
-                        <article className="room-entity-card" key={invitation.id}>
-                          <div>
-                            <strong>{invitation.invitedUserName}</strong>
-                            <span>
-                              Invited by {invitation.invitedByUserName} on {formatDateTime(invitation.createdAtUtc)}
-                            </span>
-                          </div>
-                          <div className="session-badges">
-                            <span className="chip chip-muted">{invitation.status}</span>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </article>
-
-                <article className="room-tab-card side-panel">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Send invite</span>
-                      <h3>Invite a user by username</h3>
-                    </div>
-                  </div>
-
-                  {permissions?.canInvite ? (
-                    <form
-                      className="auth-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void handleInviteSubmit();
-                      }}
+                      {filteredMembers.length === 0 ? (
+                        <Typography color="text.secondary" variant="body2">
+                          No members match the current search.
+                        </Typography>
+                      ) : (
+                        <List disablePadding>
+                          {filteredMembers.map((member) => (
+                            <EntityListItem
+                              key={member.userId}
+                              primary={member.userName}
+                              secondary={`Joined ${formatDateTime(member.joinedAtUtc)}`}
+                              trailing={
+                                <Stack direction="row" spacing={0.75}>
+                                  {member.isOwner ? <Chip size="small" label="Owner" color="secondary" /> : null}
+                                  {member.isAdmin ? <Chip size="small" label="Admin" variant="outlined" /> : null}
+                                  {member.userName === currentUserName ? <Chip size="small" label="You" color="primary" /> : null}
+                                  {roomDetails.permissions.canRemoveMembers && !member.isOwner ? (
+                                    <Button
+                                      color="error"
+                                      disabled={pendingAction === `remove-member-${member.userId}`}
+                                      onClick={() => void handleRemoveMember(member)}
+                                      size="small"
+                                      variant="outlined"
+                                    >
+                                      {pendingAction === `remove-member-${member.userId}` ? "Removing…" : "Remove"}
+                                    </Button>
+                                  ) : null}
+                                </Stack>
+                              }
+                            />
+                          ))}
+                        </List>
+                      )}
+                    </EntityListCard>
+                  }
+                  right={
+                    <EntityListCard
+                      icon={<PersonOffIcon fontSize="small" />}
+                      title="Remove with room ban"
+                      subtitle="Moderation note"
                     >
-                      <label className="field">
-                        <span>Username</span>
-                        <input
-                          onChange={(event) => setInviteDraft(event.target.value)}
-                          placeholder="username"
-                          type="text"
-                          value={inviteDraft}
+                      <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+                        Removing a user also bans them until an explicit unban. Add an optional
+                        reason before using the remove action from the member list.
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={4}
+                        onChange={(event) => setMemberRemovalReason(event.target.value)}
+                        placeholder="Optional moderation reason"
+                        value={memberRemovalReason}
+                      />
+                    </EntityListCard>
+                  }
+                />
+              ) : null}
+
+              {activeTab === "admins" ? (
+                <TwoColumnDialog
+                  left={
+                    <EntityListCard
+                      count={filteredAdmins.length}
+                      icon={<ShieldIcon fontSize="small" />}
+                      title="Admins"
+                      subtitle="Trusted operators"
+                    >
+                      {filteredAdmins.length === 0 ? (
+                        <Typography color="text.secondary" variant="body2">
+                          No admins match the current search.
+                        </Typography>
+                      ) : (
+                        <List disablePadding>
+                          {filteredAdmins.map((admin) => (
+                            <EntityListItem
+                              key={admin.userId}
+                              primary={admin.userName}
+                              secondary={admin.isOwner ? "Room owner" : `Granted ${formatDateTime(admin.grantedAtUtc)}`}
+                              trailing={
+                                <Stack direction="row" spacing={0.75}>
+                                  {admin.isOwner ? <Chip size="small" label="Owner" color="secondary" /> : null}
+                                  {admin.userName === currentUserName ? <Chip size="small" label="You" color="primary" /> : null}
+                                  {roomDetails.permissions.canManageAdmins && !admin.isOwner ? (
+                                    <Button
+                                      disabled={pendingAction === `revoke-admin-${admin.userId}`}
+                                      onClick={() => void handleRevokeAdmin(admin)}
+                                      size="small"
+                                      variant="outlined"
+                                      color="error"
+                                    >
+                                      {pendingAction === `revoke-admin-${admin.userId}` ? "Saving…" : "Revoke"}
+                                    </Button>
+                                  ) : null}
+                                </Stack>
+                              }
+                            />
+                          ))}
+                        </List>
+                      )}
+                    </EntityListCard>
+                  }
+                  right={
+                    <EntityListCard
+                      icon={<GppGoodIcon fontSize="small" />}
+                      title="Add an admin by username"
+                      subtitle="Grant access"
+                    >
+                      {roomDetails.permissions.canManageAdmins ? (
+                        <Stack
+                          component="form"
+                          spacing={2}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleGrantAdminSubmit();
+                          }}
+                        >
+                          <TextField
+                            label="Username"
+                            onChange={(event) => setAdminDraft(event.target.value)}
+                            value={adminDraft}
+                          />
+                          <Button
+                            type="submit"
+                            variant="contained"
+                            disabled={pendingAction === "grant-admin"}
+                          >
+                            {pendingAction === "grant-admin" ? "Granting…" : "Grant admin"}
+                          </Button>
+                        </Stack>
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          Only the room owner can grant or revoke admin access.
+                        </Typography>
+                      )}
+                    </EntityListCard>
+                  }
+                />
+              ) : null}
+
+              {activeTab === "invitations" ? (
+                <TwoColumnDialog
+                  left={
+                    <EntityListCard
+                      count={filteredInvitations.length}
+                      icon={<SendIcon fontSize="small" />}
+                      title="Outstanding invitations"
+                      subtitle="Pending invites"
+                    >
+                      {filteredInvitations.length === 0 ? (
+                        <Typography color="text.secondary" variant="body2">
+                          No pending invitations match this filter.
+                        </Typography>
+                      ) : (
+                        <List disablePadding>
+                          {filteredInvitations.map((invitation) => (
+                            <EntityListItem
+                              key={invitation.id}
+                              primary={invitation.invitedUserName}
+                              secondary={`Invited by ${invitation.invitedByUserName} on ${formatDateTime(invitation.createdAtUtc)}`}
+                              trailing={<Chip size="small" label={invitation.status} variant="outlined" />}
+                            />
+                          ))}
+                        </List>
+                      )}
+                    </EntityListCard>
+                  }
+                  right={
+                    <EntityListCard
+                      icon={<SendIcon fontSize="small" />}
+                      title="Invite a user by username"
+                      subtitle="Send invite"
+                    >
+                      {roomDetails.permissions.canInvite ? (
+                        <Stack
+                          component="form"
+                          spacing={2}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleInviteSubmit();
+                          }}
+                        >
+                          <TextField
+                            label="Username"
+                            onChange={(event) => setInviteDraft(event.target.value)}
+                            value={inviteDraft}
+                          />
+                          <Button
+                            type="submit"
+                            variant="contained"
+                            disabled={pendingAction === "invite"}
+                            endIcon={<SendIcon />}
+                          >
+                            {pendingAction === "invite" ? "Sending…" : "Send invite"}
+                          </Button>
+                        </Stack>
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          Only authorized members can invite users to this room.
+                        </Typography>
+                      )}
+                    </EntityListCard>
+                  }
+                />
+              ) : null}
+
+              {activeTab === "bans" ? (
+                <TwoColumnDialog
+                  left={
+                    <EntityListCard
+                      count={filteredBans.length}
+                      icon={<PersonOffIcon fontSize="small" />}
+                      title="People who cannot rejoin"
+                      subtitle="Room bans"
+                    >
+                      {filteredBans.length === 0 ? (
+                        <Typography color="text.secondary" variant="body2">
+                          No banned users match the current search.
+                        </Typography>
+                      ) : (
+                        <List disablePadding>
+                          {filteredBans.map((ban) => (
+                            <EntityListItem
+                              key={ban.userId}
+                              primary={ban.userName}
+                              secondary={`Banned by ${ban.bannedByUserName} on ${formatDateTime(ban.createdAtUtc)}${ban.reason ? ` · ${ban.reason}` : ""}`}
+                              trailing={
+                                roomDetails.permissions.canUnbanMembers ? (
+                                  <Button
+                                    disabled={pendingAction === `unban-${ban.userId}`}
+                                    onClick={() => void handleUnban(ban)}
+                                    size="small"
+                                    variant="outlined"
+                                  >
+                                    {pendingAction === `unban-${ban.userId}` ? "Saving…" : "Unban"}
+                                  </Button>
+                                ) : null
+                              }
+                            />
+                          ))}
+                        </List>
+                      )}
+                    </EntityListCard>
+                  }
+                  right={
+                    <EntityListCard
+                      icon={<PersonOffIcon fontSize="small" />}
+                      title="How bans work"
+                      subtitle="Rule reminder"
+                    >
+                      <Stack spacing={1.25}>
+                        <Typography color="text.secondary" variant="body2">
+                          Removing a member applies a room ban immediately.
+                        </Typography>
+                        <Typography color="text.secondary" variant="body2">
+                          Banned users cannot rejoin public rooms until explicitly unbanned.
+                        </Typography>
+                        <Typography color="text.secondary" variant="body2">
+                          Unbanning restores join eligibility but does not automatically re-add the member.
+                        </Typography>
+                      </Stack>
+                    </EntityListCard>
+                  }
+                />
+              ) : null}
+
+              {activeTab === "settings" ? (
+                <TwoColumnDialog
+                  left={
+                    <EntityListCard
+                      icon={<SettingsIcon fontSize="small" />}
+                      title="Current configuration"
+                      subtitle="Room settings"
+                    >
+                      <Stack spacing={1.25}>
+                        <MetricRow label="Name" value={`# ${roomDetails.room.name}`} />
+                        <MetricRow label="Visibility" value={roomDetails.room.isPrivate ? "Private" : "Public"} />
+                        <MetricRow label="Members" value={roomDetails.room.memberCount} />
+                        <MetricRow label="Unread" value={roomDetails.room.unreadCount} />
+                        <MetricRow
+                          label="Latest activity"
+                          value={roomDetails.room.lastMessageAtUtc ? formatDateTime(roomDetails.room.lastMessageAtUtc) : "No messages yet"}
                         />
-                      </label>
-                      <button className="primary-button" disabled={pendingAction === "invite"} type="submit">
-                        {pendingAction === "invite" ? "Sending..." : "Send invite"}
-                      </button>
-                    </form>
-                  ) : (
-                    <div className="empty-state">
-                      <strong>You cannot send room invitations.</strong>
-                      <p>Only authorized members can invite users to this room.</p>
-                    </div>
-                  )}
-                </article>
-              </div>
-            ) : null}
+                        <MetricRow label="Description" value={roomDetails.room.description ?? "No description"} />
+                      </Stack>
+                    </EntityListCard>
+                  }
+                  right={
+                    <EntityListCard
+                      icon={<DeleteForeverIcon fontSize="small" />}
+                      title="Destructive actions"
+                      subtitle="Danger zone"
+                    >
+                      <Stack spacing={1.5}>
+                        <MetricRow label="Current role" value={room.isOwner ? "Owner" : room.isAdmin ? "Admin" : "Member"} />
+                        {roomDetails.permissions.canLeave ? (
+                          <Button
+                            disabled={pendingAction === "leave-room"}
+                            onClick={() => void handleLeaveRoom()}
+                            variant="outlined"
+                          >
+                            {pendingAction === "leave-room" ? "Leaving…" : "Leave room"}
+                          </Button>
+                        ) : null}
+                        {room.isOwner ? (
+                          <Button
+                            color="error"
+                            disabled={pendingAction === "delete-room"}
+                            onClick={() => void handleDeleteRoom()}
+                            variant="contained"
+                            startIcon={<DeleteForeverIcon />}
+                          >
+                            {pendingAction === "delete-room" ? "Deleting…" : "Delete room permanently"}
+                          </Button>
+                        ) : null}
+                        {!roomDetails.permissions.canLeave && !room.isOwner ? (
+                          <Typography color="text.secondary" variant="body2">
+                            Your current permissions do not allow destructive room actions from this tab.
+                          </Typography>
+                        ) : null}
+                      </Stack>
+                    </EntityListCard>
+                  }
+                />
+              ) : null}
+            </>
+          ) : null}
 
-            {activeTab === "bans" ? (
-              <div className="room-tab-grid">
-                <article className="room-tab-card">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Room bans</span>
-                      <h3>People who cannot rejoin</h3>
-                    </div>
-                    <span className="counter-pill">{filteredBans.length}</span>
-                  </div>
+          {!loading && !roomDetails && !errorMessage ? (
+            <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
+              No room details are available yet. Try reopening the manager to reload the latest state.
+            </Typography>
+          ) : null}
+        </Stack>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-                  {filteredBans.length === 0 ? (
-                    <div className="empty-state">
-                      <strong>No banned users match the current search.</strong>
-                      <p>Users removed from the room will appear here until unbanned.</p>
-                    </div>
-                  ) : (
-                    <div className="room-entity-list">
-                      {filteredBans.map((ban) => (
-                        <article className="room-entity-card" key={ban.userId}>
-                          <div>
-                            <strong>{ban.userName}</strong>
-                            <span>
-                              Banned by {ban.bannedByUserName} on {formatDateTime(ban.createdAtUtc)}
-                            </span>
-                            {ban.reason ? <span>Reason: {ban.reason}</span> : null}
-                          </div>
-                          <div className="session-badges">
-                            {permissions?.canUnbanMembers ? (
-                              <button
-                                className="secondary-button compact-button"
-                                disabled={pendingAction === `unban-${ban.userId}`}
-                                onClick={() => void handleUnban(ban)}
-                                type="button"
-                              >
-                                {pendingAction === `unban-${ban.userId}` ? "Saving..." : "Unban"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </article>
+function TwoColumnDialog({
+  left,
+  right,
+}: {
+  left: ReactNode;
+  right: ReactNode;
+}) {
+  return (
+    <Box
+      sx={{
+        display: "grid",
+        gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.25fr) minmax(300px, 0.85fr)" },
+        gap: 2,
+      }}
+    >
+      {left}
+      {right}
+    </Box>
+  );
+}
 
-                <article className="room-tab-card side-panel">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Rule reminder</span>
-                      <h3>How bans work</h3>
-                    </div>
-                  </div>
+function EntityListCard({
+  title,
+  subtitle,
+  icon,
+  count,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: ReactNode;
+  count?: number;
+  children: ReactNode;
+}) {
+  return (
+    <Box
+      sx={{
+        p: 2,
+        borderRadius: 3,
+        border: "1px solid rgba(255,255,255,0.08)",
+        bgcolor: alpha("#fff", 0.03),
+      }}
+    >
+      <Stack spacing={1.5}>
+        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+          <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+            <Avatar sx={{ width: 34, height: 34, bgcolor: alpha("#66c8ff", 0.12), color: "primary.light" }}>
+              {icon}
+            </Avatar>
+            <Box>
+              <Typography variant="overline" color="text.secondary">
+                {subtitle}
+              </Typography>
+              <Typography variant="h3" sx={{ mt: 0.25 }}>
+                {title}
+              </Typography>
+            </Box>
+          </Stack>
+          {typeof count === "number" ? <Chip size="small" label={count} variant="outlined" /> : null}
+        </Stack>
+        <Divider />
+        {children}
+      </Stack>
+    </Box>
+  );
+}
 
-                  <ul className="fact-list">
-                    <li>Removing a member applies a room ban immediately.</li>
-                    <li>Banned users cannot rejoin public rooms until explicitly unbanned.</li>
-                    <li>Unbanning restores join eligibility but does not automatically re-add the member.</li>
-                  </ul>
-                </article>
-              </div>
-            ) : null}
+function EntityListItem({
+  primary,
+  secondary,
+  trailing,
+}: {
+  primary: string;
+  secondary: string;
+  trailing?: ReactNode;
+}) {
+  return (
+    <ListItem
+      disableGutters
+      sx={{
+        py: 1.25,
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        "&:last-of-type": { borderBottom: 0, pb: 0 },
+      }}
+      secondaryAction={trailing}
+    >
+      <ListItemText
+        primary={
+          <Typography variant="subtitle1">
+            {primary}
+          </Typography>
+        }
+        secondary={
+          <Typography color="text.secondary" variant="body2">
+            {secondary}
+          </Typography>
+        }
+        sx={{ pr: trailing ? 16 : 0 }}
+      />
+    </ListItem>
+  );
+}
 
-            {activeTab === "settings" ? (
-              <div className="room-tab-grid">
-                <article className="room-tab-card">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Room settings</span>
-                      <h3>Current configuration</h3>
-                    </div>
-                  </div>
-
-                  <div className="presence-details">
-                    <div>
-                      <dt>Name</dt>
-                      <dd># {roomDetails.room.name}</dd>
-                    </div>
-                    <div>
-                      <dt>Visibility</dt>
-                      <dd>{roomDetails.room.isPrivate ? "Private" : "Public"}</dd>
-                    </div>
-                    <div>
-                      <dt>Members</dt>
-                      <dd>{roomDetails.room.memberCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Unread</dt>
-                      <dd>{roomDetails.room.unreadCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Latest activity</dt>
-                      <dd>{roomDetails.room.lastMessageAtUtc ? formatDateTime(roomDetails.room.lastMessageAtUtc) : "No messages yet"}</dd>
-                    </div>
-                    <div>
-                      <dt>Description</dt>
-                      <dd>{roomDetails.room.description ?? "No description"}</dd>
-                    </div>
-                  </div>
-                </article>
-
-                <article className="room-tab-card side-panel">
-                  <div className="panel-header">
-                    <div>
-                      <span className="panel-kicker">Danger zone</span>
-                      <h3>Destructive actions</h3>
-                    </div>
-                  </div>
-
-                  <div className="room-action-list">
-                    <div className="detail-metric">
-                      <span>Current role</span>
-                      <strong>{room.isOwner ? "Owner" : room.isAdmin ? "Admin" : "Member"}</strong>
-                    </div>
-                    {permissions?.canLeave ? (
-                      <button
-                        className="secondary-button"
-                        disabled={pendingAction === "leave-room"}
-                        onClick={() => void handleLeaveRoom()}
-                        type="button"
-                      >
-                        {pendingAction === "leave-room" ? "Leaving..." : "Leave room"}
-                      </button>
-                    ) : null}
-                    {room.isOwner ? (
-                      <button
-                        className="danger-button"
-                        disabled={pendingAction === "delete-room"}
-                        onClick={() => void handleDeleteRoom()}
-                        type="button"
-                      >
-                        {pendingAction === "delete-room" ? "Deleting..." : "Delete room permanently"}
-                      </button>
-                    ) : null}
-                    {!permissions?.canLeave && !room.isOwner ? (
-                      <div className="empty-state">
-                        <strong>No destructive actions available.</strong>
-                        <p>Your current permissions do not allow room settings changes from this tab.</p>
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {!loading && !roomDetails && !errorMessage ? (
-          <div className="empty-state">
-            <strong>No room details are available yet.</strong>
-            <p>Try refreshing the room manager to load the latest state from the API.</p>
-          </div>
-        ) : null}
-      </section>
-    </div>
+function MetricRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Stack
+      direction="row"
+      spacing={1.5}
+      sx={{
+        py: 1,
+        px: 1.25,
+        borderRadius: 2,
+        bgcolor: alpha("#fff", 0.03),
+        justifyContent: "space-between",
+      }}
+    >
+      <Typography color="text.secondary" variant="body2">
+        {label}
+      </Typography>
+      <Typography variant="body2">{value}</Typography>
+    </Stack>
   );
 }
 

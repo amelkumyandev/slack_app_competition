@@ -1,6 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import {
+  AppBar,
+  Avatar,
+  Box,
+  Button,
+  Chip,
+  Container,
+  Stack,
+  Toolbar,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import { usePathname } from "next/navigation";
 
 type AppShellProps = {
@@ -35,140 +47,84 @@ const navigationItems = [
   },
 ] as const;
 
-const routeMeta: Record<string, { title: string; description: string; stage: string; highlights: string[] }> = {
-  "/": {
-    title: "Competition Workspace",
-    description: "A single-product shell for the modular monolith, with the core frontend routes gathered into one Slack-inspired frame.",
-    stage: "Frontend shell",
-    highlights: [
-      "One app frame across chat, sessions, presence, and auth.",
-      "Keeps architecture status visible while feature slices keep landing.",
-      "Sets up the visual baseline for later admin and polish work.",
-    ],
-  },
-  "/auth": {
-    title: "Authentication Entry",
-    description: "Dedicated sign-in and create-account screens that feed the same session-backed backend flows used elsewhere in the app.",
-    stage: "Account access",
-    highlights: [
-      "Sign in or create an account without detouring through the sessions screen.",
-      "Leans on the existing cookie-backed auth and persistent session model.",
-      "Routes signed-in users back into the product shell quickly.",
-    ],
-  },
-  "/chat": {
-    title: "Messaging Workspace",
-    description: "Unread-aware room and direct navigation, durable history, attachment sharing, and realtime gap repair in one central panel.",
-    stage: "Core chat",
-    highlights: [
-      "Unread badges clear as the active conversation read watermark advances.",
-      "Replies, edits, deletes, and attachments stay in the durable history flow.",
-      "Realtime gaps still fall back to REST sync repair.",
-    ],
-  },
-  "/sessions": {
-    title: "Session Control",
-    description: "Browser session inventory, selective revoke, and a cleaner security-focused screen inside the shared shell.",
-    stage: "Account security",
-    highlights: [
-      "Current-session sign-out stays separate from targeted revoke.",
-      "Great for validating the persisted user_sessions model.",
-      "Signed-out users now flow through the dedicated auth route.",
-    ],
-  },
-  "/presence": {
-    title: "Presence Diagnostics",
-    description: "Heartbeat-driven presence, tab aggregation, and reconnect visibility framed as a first-class app screen instead of a standalone demo.",
-    stage: "Realtime health",
-    highlights: [
-      "Multi-tab online, AFK, and offline inference remains explicit.",
-      "Manual heartbeat and reconnect states stay visible.",
-      "Keeps presence behavior close to the main product navigation.",
-    ],
-  },
-};
-
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const meta = routeMeta[pathname] ?? routeMeta["/"];
 
   return (
-    <div className="app-frame">
-      <aside className="app-sidebar">
-        <div className="app-brand">
-          <span className="eyebrow">Slack App Competition</span>
-          <h1>Classic chat, one monorepo, one product shell.</h1>
-          <p>
-            Frontend F13 turns the earlier route demos into a cohesive app surface without changing
-            the backend guardrails underneath them.
-          </p>
-        </div>
+    <Box sx={{ minHeight: "100vh" }}>
+      <AppBar position="sticky" color="transparent">
+        <Toolbar sx={{ gap: 2, minHeight: 72 }}>
+          <Stack direction="row" spacing={1.5} sx={{ minWidth: 0, alignItems: "center" }}>
+            <Avatar
+              variant="rounded"
+              sx={{
+                bgcolor: "rgba(127, 63, 152, 0.22)",
+                color: "secondary.light",
+                width: 40,
+                height: 40,
+                fontWeight: 800,
+              }}
+            >
+              SC
+            </Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="overline" color="text.secondary">
+                Slack App Competition
+              </Typography>
+              <Typography variant="subtitle1" noWrap>
+                Modern classic chat shell
+              </Typography>
+            </Box>
+          </Stack>
 
-        <nav className="app-nav" aria-label="Primary navigation">
-          {navigationItems.map((item) => {
-            const isActive =
-              item.href === "/" ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
+          <Box
+            component="nav"
+            aria-label="Primary navigation"
+            sx={{
+              display: "flex",
+              gap: 1,
+              minWidth: 0,
+              overflowX: "auto",
+              flex: 1,
+              px: { xs: 0, md: 1 },
+              "&::-webkit-scrollbar": { display: "none" },
+            }}
+          >
+            {navigationItems.map((item) => {
+              const isActive =
+                item.href === "/" ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
-            return (
-              <Link className={isActive ? "app-nav-item active" : "app-nav-item"} href={item.href} key={item.href}>
-                <span>{item.kicker}</span>
-                <strong>{item.label}</strong>
-              </Link>
-            );
-          })}
-        </nav>
+              return (
+                <Button
+                  component={Link}
+                  href={item.href}
+                  key={item.href}
+                  color={isActive ? "secondary" : "inherit"}
+                  variant={isActive ? "contained" : "text"}
+                  sx={{
+                    whiteSpace: "nowrap",
+                    color: isActive ? "common.white" : "text.secondary",
+                    backgroundColor: isActive ? "rgba(127, 63, 152, 0.26)" : "transparent",
+                  }}
+                >
+                  {item.label}
+                </Button>
+              );
+            })}
+          </Box>
 
-        <div className="app-sidebar-card">
-          <span className="panel-kicker">Stable commands</span>
-          <ul className="app-inline-list">
-            <li>`docker compose up --build`</li>
-            <li>`dotnet test`</li>
-            <li>`npm run build`</li>
-          </ul>
-        </div>
-      </aside>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <Tooltip title="Realtime stays additive: REST remains the source of truth.">
+              <Chip label="REST + SignalR" size="small" variant="outlined" />
+            </Tooltip>
+            <Chip label="Dark UX refactor" size="small" color="primary" />
+          </Stack>
+        </Toolbar>
+      </AppBar>
 
-      <div className="app-main">
-        <header className="app-topbar">
-          <div>
-            <span className="eyebrow">{meta.stage}</span>
-            <h2>{meta.title}</h2>
-            <p>{meta.description}</p>
-          </div>
-
-          <div className="app-topbar-actions">
-            <Link className="ghost-link" href="/chat">
-              Open chat
-            </Link>
-            <Link className="ghost-link" href="/auth">
-              Open auth
-            </Link>
-          </div>
-        </header>
-
-        <div className="app-content">{children}</div>
-      </div>
-
-      <aside className="app-rail">
-        <div className="app-rail-card">
-          <span className="panel-kicker">Current focus</span>
-          <h2>{meta.title}</h2>
-          <ul className="fact-list">
-            {meta.highlights.map((highlight) => (
-              <li key={highlight}>{highlight}</li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="app-rail-card">
-          <span className="panel-kicker">Guardrails</span>
-          <ul className="fact-list">
-            <li>REST remains the command surface, while SignalR handles live fan-out.</li>
-            <li>Unread, presence, and access control stay server-authoritative.</li>
-            <li>Docker-first startup remains the trunk contract for QA.</li>
-          </ul>
-        </div>
-      </aside>
-    </div>
+      <Container maxWidth={false} sx={{ px: { xs: 2, md: 3 }, py: { xs: 2, md: 3 } }}>
+        {children}
+      </Container>
+    </Box>
   );
 }

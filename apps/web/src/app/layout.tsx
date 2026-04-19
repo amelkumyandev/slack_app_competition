@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/shell/AppShell";
+import { MuiProviders } from "@/components/layout/MuiProviders";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,7 +16,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <MuiProviders>
+          <AppShell>{children}</AppShell>
+        </MuiProviders>
       </body>
     </html>
   );
