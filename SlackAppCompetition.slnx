@@ -3,4 +3,14 @@
   <Folder Name="/apps/api/">
     <Project Path="apps/api/SlackApp.Api.csproj" />
   </Folder>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Identity/">
+    <Project Path="src/Modules/Identity/SlackApp.Modules.Identity.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/integration/" />
+  <Folder Name="/tests/integration/SlackApp.Api.IntegrationTests/">
+    <Project Path="tests/integration/SlackApp.Api.IntegrationTests/SlackApp.Api.IntegrationTests.csproj" />
+  </Folder>
 </Solution>

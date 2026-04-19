@@ -6,6 +6,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 
 - `feat/scaffold-monorepo` established the monorepo layout and starter apps.
 - `feat/docker-compose-bootstrap` adds Dockerfiles, Compose services, healthchecks, and startup docs.
+- `feat/auth-and-account-core` adds cookie-backed registration, login, password management, and current-session logout foundations.
 - Business features are intentionally not implemented yet.
 
 ## Planned Stack
@@ -98,6 +99,21 @@ The Compose stack includes:
 - `postgres` for durable data
 - `redis` for presence and ephemeral coordination
 - `uploads_data` as the mounted local attachment volume
+
+## Current Auth API
+
+The backend now exposes the initial auth/account endpoints:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
+- `POST /api/auth/change-password`
+- `POST /api/auth/password-reset/request`
+- `POST /api/auth/password-reset/confirm`
+- `POST /api/auth/delete-account`
+
+Auth is currently implemented with a database-backed cookie session model so later session-management work can build on the same persistence instead of replacing it.
 
 ## Environment Contract
 

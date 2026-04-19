@@ -1,8 +1,34 @@
+using SlackApp.Modules.Identity.Extensions;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("web", policy =>
+    {
+        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"];
+
+        policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+builder.Services.AddIdentityModule(builder.Configuration);
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
+app.UseCors("web");
+app.UseAuthentication();
+app.UseAuthorization();
+
+if (app.Configuration.GetValue("Identity:InitializeOnStartup", true))
+{
+    await app.Services.InitializeIdentityModuleAsync();
+}
 
 var modules = new[]
 {
@@ -21,8 +47,9 @@ var modules = new[]
 app.MapGet("/", () => Results.Ok(new
 {
     application = "Slack App Competition API",
-    status = "scaffold-ready",
+    status = "auth-core-ready",
     architecture = "modular-monolith",
+    auth = "cookie-session",
     realtime = "signalr-planned",
     modules
 }));
@@ -36,8 +63,13 @@ app.MapGet("/api/meta", () => Results.Ok(new
     {
         postgresConfigured = !string.IsNullOrWhiteSpace(app.Configuration.GetConnectionString("Postgres")),
         redisConfigured = !string.IsNullOrWhiteSpace(app.Configuration.GetConnectionString("Redis")),
-        uploadsRoot = app.Configuration["Storage:UploadsRoot"] ?? "uploads"
+        uploadsRoot = app.Configuration["Storage:UploadsRoot"] ?? "uploads",
+        auth = "cookie-session"
     }
 }));
 
+app.MapIdentityModule();
+
 app.Run();
+
+public partial class Program;
