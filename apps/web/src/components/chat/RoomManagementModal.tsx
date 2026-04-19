@@ -184,6 +184,27 @@ export function RoomManagementModal({
     );
   }
 
+  async function handleMakeAdmin(member: RoomMemberResponse) {
+    if (!window.confirm(`Grant admin rights to ${member.userName}?`)) {
+      return;
+    }
+
+    await runRoomAction(
+      `make-admin-${member.userId}`,
+      async () => {
+        const payload: UpdateRoomAdminRequest = {
+          targetUserName: member.userName,
+        };
+
+        await apiRequest<MessageResponse>(`/api/rooms/${room.id}/admins`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      "Admin granted.",
+    );
+  }
+
   async function handleRevokeAdmin(admin: RoomAdminResponse) {
     if (!window.confirm(`Remove admin access for ${admin.userName}?`)) {
       return;
@@ -387,6 +408,16 @@ export function RoomManagementModal({
                                   {member.isOwner ? <Chip size="small" label="Owner" color="secondary" /> : null}
                                   {member.isAdmin ? <Chip size="small" label="Admin" variant="outlined" /> : null}
                                   {member.userName === currentUserName ? <Chip size="small" label="You" color="primary" /> : null}
+                                  {roomDetails.permissions.canManageAdmins && !member.isOwner && !member.isAdmin ? (
+                                    <Button
+                                      disabled={pendingAction === `make-admin-${member.userId}`}
+                                      onClick={() => void handleMakeAdmin(member)}
+                                      size="small"
+                                      variant="outlined"
+                                    >
+                                      {pendingAction === `make-admin-${member.userId}` ? "Saving…" : "Make admin"}
+                                    </Button>
+                                  ) : null}
                                   {roomDetails.permissions.canRemoveMembers && !member.isOwner ? (
                                     <Button
                                       color="error"

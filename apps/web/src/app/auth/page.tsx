@@ -1,5 +1,5 @@
-import { AuthWorkspace } from "@/components/auth/AuthWorkspace";
+import { redirect } from "next/navigation";
 
 export default function AuthPage() {
-  return <AuthWorkspace />;
+  redirect("/auth/sign-in");
 }

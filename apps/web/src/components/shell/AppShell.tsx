@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { AuthShell } from "@/components/shell/AuthShell";
+import { ChatShell } from "@/components/shell/ChatShell";
 import {
   AppBar,
   Avatar,
@@ -13,42 +16,29 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { usePathname } from "next/navigation";
 
 type AppShellProps = {
   children: React.ReactNode;
 };
 
 const navigationItems = [
-  {
-    href: "/",
-    label: "Overview",
-    kicker: "Home",
-  },
-  {
-    href: "/auth",
-    label: "Auth",
-    kicker: "Entry",
-  },
-  {
-    href: "/chat",
-    label: "Chat",
-    kicker: "Messaging",
-  },
-  {
-    href: "/sessions",
-    label: "Sessions",
-    kicker: "Security",
-  },
-  {
-    href: "/presence",
-    label: "Presence",
-    kicker: "Realtime",
-  },
+  { href: "/", label: "Overview" },
+  { href: "/auth", label: "Auth" },
+  { href: "/chat", label: "Chat" },
+  { href: "/sessions", label: "Sessions" },
+  { href: "/presence", label: "Presence" },
 ] as const;
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
+
+  if (pathname.startsWith("/auth")) {
+    return <AuthShell>{children}</AuthShell>;
+  }
+
+  if (pathname.startsWith("/chat")) {
+    return <ChatShell>{children}</ChatShell>;
+  }
 
   return (
     <Box sx={{ minHeight: "100vh" }}>

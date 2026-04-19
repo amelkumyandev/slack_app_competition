@@ -5,11 +5,14 @@ import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } fro
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
+  Add as AddIcon,
   AttachFile as AttachFileIcon,
   Autorenew as AutorenewIcon,
   Bolt as BoltIcon,
   ChatBubbleOutlineOutlined as ChatBubbleOutlineIcon,
-  Circle as CircleIcon,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
+  Close as CloseIcon,
   Download as DownloadIcon,
   EditOutlined as EditOutlinedIcon,
   EmojiEmotionsOutlined as EmojiEmotionsOutlinedIcon,
@@ -17,6 +20,7 @@ import {
   LockOutlined as LockOutlinedIcon,
   MarkUnreadChatAlt as MarkUnreadChatAltIcon,
   Person as PersonOutlineIcon,
+  PersonAdd as PersonAddIcon,
   Refresh as RefreshIcon,
   Reply as ReplyIcon,
   Search as SearchIcon,
@@ -35,7 +39,12 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   List,
@@ -43,6 +52,7 @@ import {
   ListItemText,
   Paper,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -139,6 +149,13 @@ export function ChatWorkspace() {
   const [openingDirectUserName, setOpeningDirectUserName] = useState<string | null>(null);
   const [roomManagerOpen, setRoomManagerOpen] = useState(false);
   const [sidebarSearch, setSidebarSearch] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [createRoomOpen, setCreateRoomOpen] = useState(false);
+  const [createRoomDraft, setCreateRoomDraft] = useState({ name: "", description: "", isPrivate: false });
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteDraft, setInviteDraft] = useState("");
+  const [invitingUser, setInvitingUser] = useState(false);
   const [activeRoomDetails, setActiveRoomDetails] = useState<RoomDetailsResponse | null>(null);
   const [activeRoomDetailsLoading, setActiveRoomDetailsLoading] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
@@ -815,6 +832,76 @@ export function ChatWorkspace() {
     }
   }
 
+  async function handleCreateRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const trimmedName = createRoomDraft.name.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    setCreatingRoom(true);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const created = await apiRequest<RoomListItemResponse>("/api/rooms", {
+        method: "POST",
+        body: JSON.stringify({
+          name: trimmedName,
+          description: createRoomDraft.description.trim() || null,
+          isPrivate: createRoomDraft.isPrivate,
+        }),
+      });
+
+      setFeedbackMessage(`Room "${created.name}" created.`);
+      setCreateRoomOpen(false);
+      setCreateRoomDraft({ name: "", description: "", isPrivate: false });
+      await refreshNavigationData();
+      setSelectedConversation(toRoomSelection(created));
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "The room could not be created."));
+    } finally {
+      setCreatingRoom(false);
+    }
+  }
+
+  async function handleInviteUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedConversation || selectedConversation.kind !== "room") {
+      return;
+    }
+
+    const targetUserName = inviteDraft.trim();
+    if (!targetUserName) {
+      return;
+    }
+
+    setInvitingUser(true);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await apiRequest<MessageResponse>(
+        `/api/rooms/${selectedConversation.roomId}/invitations`,
+        {
+          method: "POST",
+          body: JSON.stringify({ targetUserName }),
+        },
+      );
+
+      setFeedbackMessage(`Invitation sent to ${targetUserName}.`);
+      setInviteOpen(false);
+      setInviteDraft("");
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "The invitation could not be sent."));
+    } finally {
+      setInvitingUser(false);
+    }
+  }
+
   async function handleDownloadAttachment(attachment: MessageAttachmentResponse) {
     setDownloadTargetId(attachment.id);
     setFeedbackMessage(null);
@@ -887,85 +974,21 @@ export function ChatWorkspace() {
     : "No conversation selected";
 
   return (
-    <Box sx={{ maxWidth: 1680, mx: "auto" }}>
-      <Card
-        sx={{
-          mb: 2.5,
-          background:
-            "linear-gradient(140deg, rgba(21,24,32,0.98), rgba(57,32,74,0.96))",
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-          <Stack
-            direction={{ xs: "column", lg: "row" }}
-            spacing={2.5}
-            sx={{ alignItems: { lg: "flex-start" }, justifyContent: "space-between" }}
-          >
-            <Box sx={{ maxWidth: 860 }}>
-              <Chip
-                label="Slack-inspired chat refactor"
-                color="secondary"
-                icon={<BoltIcon />}
-                sx={{ mb: 1.5, bgcolor: "rgba(240,138,183,0.12)" }}
-              />
-              <Typography variant="h1" sx={{ mb: 1.5 }}>
-                Dense conversation reading, stronger right-rail navigation, and safer admin flows.
-              </Typography>
-              <Typography color="text.secondary" sx={{ maxWidth: 760 }}>
-                The backend stays untouched. REST still owns persistence and policy, SignalR still
-                owns live hints, and the frontend now presents that behavior in a darker, more
-                product-native shell closer to the UX spec.
-              </Typography>
-            </Box>
-
-            <Stack spacing={1.25} sx={{ alignItems: { xs: "stretch", lg: "flex-end" } }}>
-              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { lg: "flex-end" } }}>
-                <Chip label={`Signed in as ${currentUser?.userName ?? "…"}`} variant="outlined" />
-                <Chip
-                  color={realtimeStatus === "connected" ? "success" : timeline.syncing ? "warning" : "default"}
-                  label={labelForRealtimeState(realtimeStatus)}
-                />
-                <Chip label={`${totalConversationUnread} unread`} variant="outlined" />
-              </Stack>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-                <Button
-                  onClick={() => void loadWorkspace(false)}
-                  startIcon={refreshing ? <CircularProgress color="inherit" size={16} /> : <RefreshIcon />}
-                  variant="outlined"
-                  disabled={workspaceStatus === "loading" || refreshing}
-                >
-                  {refreshing ? "Refreshing…" : "Refresh workspace"}
-                </Button>
-                <Button component={Link} href="/presence" variant="text">
-                  Presence workspace
-                </Button>
-                <Button component={Link} href="/sessions" variant="text">
-                  Sessions workspace
-                </Button>
-              </Stack>
-            </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
-
+    <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, px: { xs: 1, md: 2 }, py: { xs: 1, md: 2 } }}>
       {feedbackMessage ? (
-        <Alert severity="success" variant="filled" sx={{ mb: 2 }}>
+        <Alert severity="success" variant="filled" onClose={() => setFeedbackMessage(null)} sx={{ mb: 1.5 }}>
           {feedbackMessage}
         </Alert>
       ) : null}
       {errorMessage ? (
-        <Alert severity="error" variant="filled" sx={{ mb: 2 }}>
+        <Alert severity="error" variant="filled" onClose={() => setErrorMessage(null)} sx={{ mb: 1.5 }}>
           {errorMessage}
         </Alert>
       ) : null}
 
       {workspaceStatus === "loading" ? (
         <StatePanel
-          action={
-            <CircularProgress size={22} />
-          }
+          action={<CircularProgress size={22} />}
           subtitle="Loading workspace"
           title="Preparing rooms, directs, and durable history"
         />
@@ -975,8 +998,8 @@ export function ChatWorkspace() {
         <StatePanel
           action={
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-              <Button component={Link} href="/auth" variant="contained">
-                Go to auth
+              <Button component={Link} href="/auth/sign-in" variant="contained">
+                Go to sign in
               </Button>
               <Button component={Link} href="/" variant="outlined">
                 Back to overview
@@ -985,7 +1008,7 @@ export function ChatWorkspace() {
           }
           subtitle="Access required"
           title="Sign in before opening the chat workspace"
-          detail="The chat UI still uses the same cookie-backed auth and session flows. Once this browser is authenticated, it can load durable history and join the correct realtime conversation group."
+          detail="The chat UI uses cookie-backed auth. Once authenticated, durable history and live realtime conversations load automatically."
         />
       ) : null}
 
@@ -998,7 +1021,6 @@ export function ChatWorkspace() {
           }
           subtitle="Recoverable error"
           title="The chat workspace needs a retry"
-          detail="Trust in history depends on explicit failure states, so the UI stays clear when live sync or initial loading degrades."
         />
       ) : null}
 
@@ -1008,131 +1030,379 @@ export function ChatWorkspace() {
             display: "grid",
             gridTemplateColumns: {
               xs: "1fr",
-              xl: "minmax(0, 1.75fr) minmax(320px, 0.95fr) minmax(280px, 0.8fr)",
+              md: sidebarCollapsed ? "56px minmax(0, 1fr) minmax(280px, 320px)" : "minmax(280px, 320px) minmax(0, 1fr) minmax(280px, 320px)",
             },
-            gap: 2,
-            alignItems: "start",
+            gap: 1.5,
+            flex: 1,
+            minHeight: 0,
+            alignItems: "stretch",
           }}
         >
-          <Card sx={{ minHeight: 780, display: "flex", flexDirection: "column", order: { xs: 1, xl: 1 } }}>
-            <CardContent sx={{ p: 0, display: "flex", flexDirection: "column", minHeight: 780 }}>
-              <Box
-                sx={{
-                  px: { xs: 2, md: 3 },
-                  py: 2.25,
-                  borderBottom: "1px solid",
-                  borderColor: "divider",
-                  background: alpha("#fff", 0.02),
-                }}
-              >
-                <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between" }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="overline" color="text.secondary">
-                      {selectedConversation?.kind === "room" ? "Room conversation" : selectedConversation ? "Direct conversation" : "Select a conversation"}
+          {/* LEFT SIDEBAR */}
+          <Card
+            sx={{
+              minHeight: { md: "calc(100vh - 120px)" },
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            {sidebarCollapsed ? (
+              <Stack spacing={1.5} sx={{ p: 1, alignItems: "center" }}>
+                <Tooltip title="Expand sidebar">
+                  <IconButton onClick={() => setSidebarCollapsed(false)} size="small">
+                    <ChevronRightIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Search">
+                  <IconButton size="small">
+                    <SearchIcon />
+                  </IconButton>
+                </Tooltip>
+                <Badge badgeContent={totalConversationUnread} color="secondary" max={99}>
+                  <Tooltip title="Conversations">
+                    <ChatBubbleOutlineIcon fontSize="small" />
+                  </Tooltip>
+                </Badge>
+                <Tooltip title="Create room">
+                  <IconButton color="primary" onClick={() => setCreateRoomOpen(true)} size="small">
+                    <AddIcon />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            ) : (
+              <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                <Box sx={{ p: 1.5, borderBottom: "1px solid", borderColor: "divider" }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1 }}>
+                    <Typography variant="overline" color="text.secondary" sx={{ flex: 1 }}>
+                      Workspace
                     </Typography>
-                    <Stack direction="row" spacing={1} sx={{ mt: 0.75, minWidth: 0, alignItems: "center" }}>
-                      {selectedConversation?.kind === "room" ? (
-                        <TagIcon fontSize="small" sx={{ color: "secondary.light" }} />
-                      ) : (
-                        <PersonOutlineIcon fontSize="small" sx={{ color: "primary.light" }} />
-                      )}
-                      <Typography variant="h2" noWrap>
-                        {selectedConversationLabel}
-                      </Typography>
-                      {selectedConversation?.kind === "direct" && selectedConversation.accessMode === "read_only" ? (
-                        <Chip color="warning" label="Read only" size="small" />
-                      ) : null}
-                    </Stack>
-                    <Typography color="text.secondary" sx={{ mt: 1, maxWidth: 760 }}>
-                      {selectedConversation?.subtitle ??
-                        "Select a room or direct conversation to load paged history and join its realtime stream."}
-                    </Typography>
-                  </Box>
-
-                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
-                    <Chip
-                      icon={timeline.syncing ? <AutorenewIcon /> : <BoltIcon />}
-                      color={timeline.syncing ? "warning" : realtimeStatus === "connected" ? "success" : "default"}
-                      label={timeline.syncing ? "Syncing missing messages…" : realtimeStatus === "connected" ? "Live" : "REST only"}
-                    />
-                    <Chip label={`${timeline.messages.length} loaded`} variant="outlined" />
-                    <Chip label={`wm ${timeline.latestWatermark}`} variant="outlined" />
+                    <Tooltip title="Collapse sidebar">
+                      <IconButton onClick={() => setSidebarCollapsed(true)} size="small">
+                        <ChevronLeftIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </Stack>
-                </Stack>
-              </Box>
-
-              <Box sx={{ px: { xs: 2, md: 3 }, pt: 1.5 }}>
-                {selectedConversation?.kind === "direct" && selectedConversation.accessMode === "read_only" ? (
-                  <Alert severity="warning" sx={{ mb: 1.5 }}>
-                    This direct conversation is frozen in read-only mode because a user-to-user ban
-                    is active. Existing history remains visible, but new messages are blocked by
-                    policy.
-                  </Alert>
-                ) : null}
-                {realtimeStatus === "reconnecting" ? (
-                  <Alert severity="warning" sx={{ mb: 1.5 }}>
-                    Reconnecting… new live events may be delayed while the client re-establishes the
-                    SignalR channel.
-                  </Alert>
-                ) : null}
-                {timeline.syncing ? (
-                  <Alert severity="info" sx={{ mb: 1.5 }}>
-                    Syncing missing messages from durable history…
-                  </Alert>
-                ) : null}
-                {timeline.error ? (
-                  <Alert severity="error" sx={{ mb: 1.5 }}>
-                    {timeline.error}
-                  </Alert>
-                ) : null}
-              </Box>
-
-              {!selectedConversation ? (
-                <Box sx={{ flex: 1, px: { xs: 2, md: 3 }, pb: 2.5 }}>
-                  <EmptySurface
-                    icon={<ChatBubbleOutlineIcon fontSize="large" />}
-                    title="No conversation selected yet"
-                    description="Choose a room or direct chat from the right sidebar to load durable history, unread state, and live sync."
+                  <TextField
+                    size="small"
+                    fullWidth
+                    placeholder="Search rooms and contacts"
+                    value={sidebarSearch}
+                    onChange={(event) => setSidebarSearch(event.target.value)}
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchIcon fontSize="small" />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
                   />
                 </Box>
-              ) : (
-                <>
-                  <Box
-                    onScroll={(event) => {
-                      const element = event.currentTarget;
-                      setScrollTop(element.scrollTop);
 
-                      if (element.scrollTop < 120 && timeline.nextCursor && !timeline.loadingOlder && !loadOlderPendingRef.current) {
-                        loadOlderPendingRef.current = true;
-                        void loadOlderMessages().finally(() => {
-                          loadOlderPendingRef.current = false;
-                        });
-                      }
-                    }}
-                    ref={timelineContainerRef}
-                    sx={{
-                      flex: 1,
-                      minHeight: 0,
-                      overflow: "auto",
-                      px: { xs: 2, md: 3 },
-                      pb: 2.5,
-                    }}
+                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", px: 1.5, py: 1.5 }}>
+                  <Stack spacing={2}>
+                    <SidebarSection
+                      id="public-rooms"
+                      title="Public Rooms"
+                      count={publicRooms.length}
+                    >
+                      {publicRooms.length > 0 ? (
+                        <List disablePadding sx={{ display: "grid", gap: 0.5 }}>
+                          {publicRooms.map((room) => (
+                            <ConversationRow
+                              key={room.id}
+                              active={selectedConversation?.conversationId === room.conversationId}
+                              detail={room.lastMessagePreview ?? `${room.memberCount} members`}
+                              label={`# ${room.name}`}
+                              onClick={() => setSelectedConversation(toRoomSelection(room))}
+                              unreadCount={room.unreadCount}
+                            />
+                          ))}
+                        </List>
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          No public rooms yet.
+                        </Typography>
+                      )}
+                    </SidebarSection>
+
+                    <SidebarSection
+                      id="private-rooms"
+                      title="Private Rooms"
+                      count={privateRooms.length}
+                    >
+                      {privateRooms.length > 0 ? (
+                        <List disablePadding sx={{ display: "grid", gap: 0.5 }}>
+                          {privateRooms.map((room) => (
+                            <ConversationRow
+                              key={room.id}
+                              active={selectedConversation?.conversationId === room.conversationId}
+                              detail={room.lastMessagePreview ?? `${room.memberCount} members`}
+                              icon={<LockOutlinedIcon fontSize="small" />}
+                              label={`# ${room.name}`}
+                              onClick={() => setSelectedConversation(toRoomSelection(room))}
+                              unreadCount={room.unreadCount}
+                            />
+                          ))}
+                        </List>
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          No private rooms yet.
+                        </Typography>
+                      )}
+                    </SidebarSection>
+
+                    <SidebarSection
+                      id="contacts"
+                      title="Contacts"
+                      count={(contactSummary?.friends.length ?? 0)}
+                    >
+                      {filteredDirects.length > 0 ? (
+                        <List disablePadding sx={{ display: "grid", gap: 0.5, mb: 1 }}>
+                          {filteredDirects.map((conversation) => (
+                            <ConversationRow
+                              key={conversation.conversationId}
+                              active={selectedConversation?.conversationId === conversation.conversationId}
+                              detail={
+                                conversation.accessMode === "read_only"
+                                  ? "Read-only history"
+                                  : conversation.lastMessagePreview ?? "Ready to chat"
+                              }
+                              label={conversation.targetUserName}
+                              onClick={() => setSelectedConversation(toDirectSelection(conversation))}
+                              unreadCount={conversation.unreadCount}
+                              avatarTone="direct"
+                              presence="offline"
+                            />
+                          ))}
+                        </List>
+                      ) : null}
+
+                      {filteredFriends.length > 0 ? (
+                        <Stack spacing={0.5}>
+                          {filteredFriends.map((friend) => (
+                            <ListItemButton
+                              key={friend.userId}
+                              onClick={() => void handleOpenDirect(friend.userName)}
+                              disabled={openingDirectUserName === friend.userName}
+                              sx={{ px: 1.25, py: 0.75 }}
+                            >
+                              <Stack direction="row" spacing={1.25} sx={{ width: "100%", alignItems: "center" }}>
+                                <Box sx={{ position: "relative" }}>
+                                  <Avatar sx={{ width: 30, height: 30, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light", fontSize: "0.8rem" }}>
+                                    {friend.userName.slice(0, 1).toUpperCase()}
+                                  </Avatar>
+                                  <PresenceDot state="offline" />
+                                </Box>
+                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                                    {friend.userName}
+                                  </Typography>
+                                  <Typography color="text.secondary" variant="caption" noWrap>
+                                    {openingDirectUserName === friend.userName ? "Opening…" : "Send a direct message"}
+                                  </Typography>
+                                </Box>
+                              </Stack>
+                            </ListItemButton>
+                          ))}
+                        </Stack>
+                      ) : null}
+
+                      {filteredFriends.length === 0 && filteredDirects.length === 0 ? (
+                        <Typography color="text.secondary" variant="body2">
+                          No contacts yet.
+                        </Typography>
+                      ) : null}
+                    </SidebarSection>
+
+                    {filteredPublicCatalog.length > 0 ? (
+                      <SidebarSection
+                        id="public-catalog"
+                        title="Discover"
+                        count={filteredPublicCatalog.length}
+                      >
+                        <Stack spacing={0.75}>
+                          {filteredPublicCatalog.slice(0, 5).map((room) => (
+                            <Paper
+                              key={room.id}
+                              variant="outlined"
+                              sx={{ p: 1, borderRadius: 2 }}
+                            >
+                              <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                                    # {room.name}
+                                  </Typography>
+                                  <Typography color="text.secondary" variant="caption" noWrap>
+                                    {room.memberCount} members
+                                  </Typography>
+                                </Box>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  disabled={room.isMember || room.isBanned || joiningRoomId === room.id}
+                                  onClick={() => void handleJoinRoom(room)}
+                                >
+                                  {room.isMember ? "Joined" : joiningRoomId === room.id ? "…" : "Join"}
+                                </Button>
+                              </Stack>
+                            </Paper>
+                          ))}
+                        </Stack>
+                      </SidebarSection>
+                    ) : null}
+                  </Stack>
+                </Box>
+
+                <Box sx={{ p: 1.5, borderTop: "1px solid", borderColor: "divider" }}>
+                  <Button
+                    fullWidth
+                    onClick={() => setCreateRoomOpen(true)}
+                    startIcon={<AddIcon />}
+                    variant="contained"
                   >
-                    {timeline.loading ? (
-                      <EmptySurface
-                        icon={<CircularProgress size={28} />}
-                        title="Loading history"
-                        description="Pulling the latest visible window from durable conversation history."
-                        compact
-                      />
-                    ) : timeline.messages.length === 0 ? (
-                      <EmptySurface
-                        icon={<MarkUnreadChatAltIcon fontSize="large" />}
-                        title="No messages yet"
-                        description="This conversation is ready for the first durable message. Replies, edits, deletes, and uploads all flow through the same watermark stream."
-                        compact
-                      />
-                    ) : (
+                    Create room
+                  </Button>
+                </Box>
+              </Box>
+            )}
+          </Card>
+
+          {/* CENTER - Chat */}
+          <Card sx={{ display: "flex", flexDirection: "column", minHeight: { md: "calc(100vh - 120px)" }, overflow: "hidden" }}>
+            <Box
+              sx={{
+                px: { xs: 2, md: 2.5 },
+                py: 1.5,
+                borderBottom: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
+                    {selectedConversation?.kind === "room" ? (
+                      selectedConversation.room.isPrivate ? (
+                        <LockOutlinedIcon fontSize="small" sx={{ color: "secondary.light" }} />
+                      ) : (
+                        <TagIcon fontSize="small" sx={{ color: "secondary.light" }} />
+                      )
+                    ) : selectedConversation ? (
+                      <PersonOutlineIcon fontSize="small" sx={{ color: "primary.light" }} />
+                    ) : null}
+                    <Typography variant="h2" noWrap sx={{ fontSize: "1.25rem" }}>
+                      {selectedConversationLabel}
+                    </Typography>
+                    {selectedConversation?.kind === "direct" && selectedConversation.accessMode === "read_only" ? (
+                      <Chip color="warning" label="Read only" size="small" />
+                    ) : null}
+                  </Stack>
+                  {selectedConversation ? (
+                    <Typography color="text.secondary" variant="body2" noWrap sx={{ mt: 0.25 }}>
+                      {selectedConversation.kind === "room"
+                        ? selectedConversation.room.description ?? `${selectedConversation.room.memberCount} members`
+                        : selectedConversation.subtitle}
+                    </Typography>
+                  ) : null}
+                </Box>
+
+                <Stack direction="row" spacing={1}>
+                  <Chip
+                    icon={timeline.syncing ? <AutorenewIcon /> : <BoltIcon />}
+                    color={timeline.syncing ? "warning" : realtimeStatus === "connected" ? "success" : "default"}
+                    label={timeline.syncing ? "Syncing…" : realtimeStatus === "connected" ? "Live" : labelForRealtimeState(realtimeStatus)}
+                    size="small"
+                  />
+                  <Tooltip title="Refresh workspace">
+                    <span>
+                      <IconButton
+                        onClick={() => void loadWorkspace(false)}
+                        disabled={refreshing}
+                        size="small"
+                      >
+                        {refreshing ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
+              </Stack>
+            </Box>
+
+            {selectedConversation?.kind === "direct" && selectedConversation.accessMode === "read_only" ? (
+              <Alert severity="warning" sx={{ mx: 2, mt: 1.5 }}>
+                This direct conversation is frozen in read-only mode. New messages are blocked by policy.
+              </Alert>
+            ) : null}
+            {realtimeStatus === "reconnecting" ? (
+              <Alert severity="warning" sx={{ mx: 2, mt: 1.5 }}>
+                Reconnecting realtime channel…
+              </Alert>
+            ) : null}
+            {timeline.error ? (
+              <Alert severity="error" sx={{ mx: 2, mt: 1.5 }}>
+                {timeline.error}
+              </Alert>
+            ) : null}
+
+            {!selectedConversation ? (
+              <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }}>
+                <EmptySurface
+                  icon={<ChatBubbleOutlineIcon fontSize="large" />}
+                  title="No conversation selected"
+                  description="Pick a room or contact from the left sidebar to start chatting."
+                />
+              </Box>
+            ) : (
+              <>
+                <Box
+                  onScroll={(event) => {
+                    const element = event.currentTarget;
+                    setScrollTop(element.scrollTop);
+
+                    if (element.scrollTop < 120 && timeline.nextCursor && !timeline.loadingOlder && !loadOlderPendingRef.current) {
+                      loadOlderPendingRef.current = true;
+                      void loadOlderMessages().finally(() => {
+                        loadOlderPendingRef.current = false;
+                      });
+                    }
+                  }}
+                  ref={timelineContainerRef}
+                  sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: "auto",
+                    px: { xs: 2, md: 2.5 },
+                    py: 1.5,
+                  }}
+                >
+                  {timeline.loading ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+                      <CircularProgress size={28} />
+                    </Box>
+                  ) : timeline.messages.length === 0 ? (
+                    <EmptySurface
+                      icon={<MarkUnreadChatAltIcon fontSize="large" />}
+                      title="No messages yet"
+                      description="Be the first to send a message in this conversation."
+                      compact
+                    />
+                  ) : (
+                    <>
+                      {timeline.loadingOlder ? (
+                        <Stack direction="row" spacing={1} sx={{ py: 1.5, alignItems: "center", justifyContent: "center" }}>
+                          <CircularProgress size={16} />
+                          <Typography color="text.secondary" variant="body2">
+                            Loading older messages…
+                          </Typography>
+                        </Stack>
+                      ) : !timeline.nextCursor ? (
+                        <OlderMessagesDivider label="Beginning of conversation" />
+                      ) : (
+                        <OlderMessagesDivider label="Scroll up for older messages" />
+                      )}
+
                       <Box sx={{ position: "relative", height: totalHeight || "auto" }}>
                         {visibleRange.topPadding > 0 ? <Box sx={{ height: visibleRange.topPadding }} /> : null}
 
@@ -1174,437 +1444,359 @@ export function ChatWorkspace() {
 
                         {visibleRange.bottomPadding > 0 ? <Box sx={{ height: visibleRange.bottomPadding }} /> : null}
                       </Box>
-                    )}
+                    </>
+                  )}
+                </Box>
 
-                    {timeline.loadingOlder ? (
-                      <Stack direction="row" spacing={1} sx={{ py: 1.5, alignItems: "center", justifyContent: "center" }}>
-                        <CircularProgress size={16} />
-                        <Typography color="text.secondary" variant="body2">
-                          Loading older history…
-                        </Typography>
-                      </Stack>
-                    ) : null}
-                  </Box>
-
-                  <Box sx={{ px: { xs: 2, md: 3 }, pb: { xs: 2, md: 3 } }}>
-                    <Paper
-                      variant="outlined"
-                      sx={{
-                        p: 2,
-                        borderRadius: 3,
-                        bgcolor: alpha("#0f1218", 0.72),
-                        borderColor: alpha("#fff", 0.1),
-                      }}
-                    >
-                      <Stack spacing={1.5}>
-                        {replyTarget ? (
-                          <InlineComposerState
-                            label={`Replying to ${replyTarget.authorUserName}`}
-                            onClear={() => setReplyTarget(null)}
-                          />
-                        ) : null}
-
-                        {editTarget ? (
-                          <InlineComposerState
-                            label={`Editing your message from ${formatDateTime(editTarget.createdAtUtc)}`}
-                            onClear={() => {
-                              setEditTarget(null);
-                              setDraftText("");
-                            }}
-                          />
-                        ) : null}
-
-                        {selectedFile ? (
-                          <InlineComposerState
-                            label={`Uploading ${selectedFile.name} (${formatBytes(selectedFile.size)})`}
-                            onClear={() => {
-                              setSelectedFile(null);
-                              setFileInputKey((current) => current + 1);
-                            }}
-                          />
-                        ) : null}
-
-                        <Box component="form" onSubmit={handleSubmitMessage} ref={composerFormRef}>
-                          <Stack spacing={1.5}>
-                            <TextField
-                              multiline
-                              minRows={2}
-                              maxRows={6}
-                              fullWidth
-                              disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting}
-                              onChange={(event) => setDraftText(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" && !event.shiftKey) {
-                                  event.preventDefault();
-                                  composerFormRef.current?.requestSubmit();
-                                }
-                              }}
-                              placeholder={
-                                selectedConversation?.accessMode === "read_only"
-                                  ? "This conversation is read-only because a ban froze direct messaging."
-                                  : selectedFile
-                                    ? "Add an optional attachment comment."
-                                    : "Message this conversation. Enter sends, Shift+Enter adds a new line."
-                              }
-                              value={draftText}
-                            />
-
-                            <Stack
-                              direction={{ xs: "column", md: "row" }}
-                              spacing={1.5}
-                              sx={{ alignItems: { md: "center" }, justifyContent: "space-between" }}
-                            >
-                              <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
-                                <Button
-                                  component="label"
-                                  startIcon={<AttachFileIcon />}
-                                  variant="outlined"
-                                  disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
-                                >
-                                  {selectedFile ? "Replace file" : "Attach file"}
-                                  <input
-                                    accept="image/*,.pdf,.txt,.md,.zip,.json,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                                    hidden
-                                    disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
-                                    key={fileInputKey}
-                                    onChange={(event) => {
-                                      const nextFile = event.target.files?.[0] ?? null;
-                                      setSelectedFile(nextFile);
-                                    }}
-                                    type="file"
-                                  />
-                                </Button>
-                                <Tooltip title="Emoji reactions are intentionally parked for scope.">
-                                  <span>
-                                    <IconButton aria-label="Emoji actions are not available yet" disabled>
-                                      <EmojiEmotionsOutlinedIcon />
-                                    </IconButton>
-                                  </span>
-                                </Tooltip>
-                                <Typography color="text.secondary" variant="body2">
-                                  Files stay on the local uploads volume and every download is re-checked against current access.
-                                </Typography>
-                              </Stack>
-
-                              <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: { xs: "space-between", md: "flex-end" } }}>
-                                <Typography color="text.secondary" variant="body2">
-                                  Windowed history keeps the DOM bounded for large rooms.
-                                </Typography>
-                                <Button
-                                  disabled={
-                                    !selectedConversation ||
-                                    selectedConversation.accessMode === "read_only" ||
-                                    messageSubmitting ||
-                                    (!selectedFile && !draftText.trim())
-                                  }
-                                  endIcon={messageSubmitting ? <CircularProgress color="inherit" size={16} /> : <SendIcon />}
-                                  type="submit"
-                                  variant="contained"
-                                >
-                                  {messageSubmitting ? "Saving…" : editTarget ? "Save edit" : selectedFile ? "Upload file" : "Send"}
-                                </Button>
-                              </Stack>
-                            </Stack>
+                {/* COMPOSER */}
+                <Box sx={{ px: { xs: 2, md: 2.5 }, pb: { xs: 2, md: 2.5 }, pt: 0 }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 3,
+                      bgcolor: alpha("#0f1218", 0.72),
+                      borderColor: alpha("#fff", 0.1),
+                    }}
+                  >
+                    <Stack spacing={1}>
+                      {replyTarget ? (
+                        <Paper
+                          variant="outlined"
+                          sx={{
+                            px: 1.5,
+                            py: 0.75,
+                            borderRadius: 2,
+                            bgcolor: alpha("#5cc8ff", 0.06),
+                            borderColor: alpha("#5cc8ff", 0.14),
+                          }}
+                        >
+                          <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="caption" color="text.secondary">
+                                Replying to {replyTarget.authorUserName}
+                              </Typography>
+                              <Typography variant="body2" noWrap>
+                                {replyTarget.text ?? "Attachment"}
+                              </Typography>
+                            </Box>
+                            <IconButton aria-label="Cancel reply" onClick={() => setReplyTarget(null)} size="small">
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
                           </Stack>
-                        </Box>
-                      </Stack>
-                    </Paper>
-                  </Box>
-                </>
-              )}
-            </CardContent>
+                        </Paper>
+                      ) : null}
+
+                      {editTarget ? (
+                        <InlineComposerState
+                          label={`Editing your message`}
+                          onClear={() => {
+                            setEditTarget(null);
+                            setDraftText("");
+                          }}
+                        />
+                      ) : null}
+
+                      {selectedFile ? (
+                        <InlineComposerState
+                          label={`${selectedFile.name} (${formatBytes(selectedFile.size)})`}
+                          onClear={() => {
+                            setSelectedFile(null);
+                            setFileInputKey((current) => current + 1);
+                          }}
+                        />
+                      ) : null}
+
+                      <Box component="form" onSubmit={handleSubmitMessage} ref={composerFormRef}>
+                        <TextField
+                          multiline
+                          minRows={2}
+                          maxRows={6}
+                          fullWidth
+                          disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting}
+                          onChange={(event) => setDraftText(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && !event.shiftKey) {
+                              event.preventDefault();
+                              composerFormRef.current?.requestSubmit();
+                            }
+                          }}
+                          placeholder={
+                            selectedConversation?.accessMode === "read_only"
+                              ? "This conversation is read-only."
+                              : `Message ${selectedConversationLabel}`
+                          }
+                          value={draftText}
+                          variant="standard"
+                          slotProps={{
+                            input: { disableUnderline: true, sx: { px: 1, py: 0.5 } },
+                          }}
+                        />
+
+                        <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", mt: 1 }}>
+                          <Tooltip title="Add emoji (coming soon)">
+                            <span>
+                              <IconButton aria-label="Add emoji" disabled size="small">
+                                <EmojiEmotionsOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title={editTarget ? "File attachments are disabled while editing" : "Attach file"}>
+                            <span>
+                              <IconButton
+                                aria-label="Attach file"
+                                component="label"
+                                disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
+                                size="small"
+                              >
+                                <AttachFileIcon fontSize="small" />
+                                <input
+                                  accept="image/*,.pdf,.txt,.md,.zip,.json,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                                  hidden
+                                  disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
+                                  key={fileInputKey}
+                                  onChange={(event) => {
+                                    const nextFile = event.target.files?.[0] ?? null;
+                                    setSelectedFile(nextFile);
+                                  }}
+                                  type="file"
+                                />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Box sx={{ flex: 1 }} />
+                          <Button
+                            disabled={
+                              !selectedConversation ||
+                              selectedConversation.accessMode === "read_only" ||
+                              messageSubmitting ||
+                              (!selectedFile && !draftText.trim())
+                            }
+                            endIcon={messageSubmitting ? <CircularProgress color="inherit" size={14} /> : <SendIcon fontSize="small" />}
+                            onClick={() => composerFormRef.current?.requestSubmit()}
+                            type="button"
+                            variant="contained"
+                            size="small"
+                          >
+                            {messageSubmitting ? "Sending…" : editTarget ? "Save" : "Send"}
+                          </Button>
+                        </Stack>
+                      </Box>
+                    </Stack>
+                  </Paper>
+                </Box>
+              </>
+            )}
           </Card>
 
-          <Stack spacing={2} sx={{ order: { xs: 2, xl: 2 } }}>
-            <SidebarCard
-              title={currentUser?.userName ?? "Workspace"}
-              subtitle="Workspace pulse"
-              action={<Chip label={`${totalUnreadFriendly} social alerts`} size="small" variant="outlined" />}
-            >
-              <TextField
-                size="small"
-                fullWidth
-                placeholder="Search rooms and contacts"
-                value={sidebarSearch}
-                onChange={(event) => setSidebarSearch(event.target.value)}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon fontSize="small" />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-              <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1.5, flexWrap: "wrap" }}>
-                <Chip label={`${totalConversationUnread} unread`} color="primary" size="small" />
-                <Chip label={`${roomDirectory?.pendingInvitations.length ?? 0} invites`} size="small" variant="outlined" />
-                <Chip label={`${contactSummary?.incomingFriendRequests.length ?? 0} requests`} size="small" variant="outlined" />
-              </Stack>
-            </SidebarCard>
-
-            <SidebarCard title="Public rooms" subtitle="Rooms you can post in">
-              {publicRooms.length > 0 ? (
-                <List disablePadding sx={{ display: "grid", gap: 0.75 }}>
-                  {publicRooms.map((room) => (
-                    <ConversationRow
-                      key={room.id}
-                      active={selectedConversation?.conversationId === room.conversationId}
-                      detail={room.lastMessagePreview ?? `${room.memberCount} members`}
-                      label={`# ${room.name}`}
-                      onClick={() => setSelectedConversation(toRoomSelection(room))}
-                      unreadCount={room.unreadCount}
-                    />
-                  ))}
-                </List>
-              ) : (
+          {/* RIGHT SIDEBAR - Room info / Members */}
+          <Card sx={{ minHeight: { md: "calc(100vh - 120px)" }, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {!activeRoom ? (
+              <Box sx={{ p: 2.5 }}>
                 <EmptySurface
                   compact
-                  icon={<TagIcon />}
-                  title="No public rooms"
-                  description="Join a public room from the catalog below to populate this list."
+                  icon={<GroupOutlinedIcon />}
+                  title="Select a room"
+                  description="Room info, members, and moderation tools appear here when a room is open."
                 />
-              )}
-            </SidebarCard>
-
-            <SidebarCard title="Private rooms" subtitle="Invite-only spaces">
-              {privateRooms.length > 0 ? (
-                <List disablePadding sx={{ display: "grid", gap: 0.75 }}>
-                  {privateRooms.map((room) => (
-                    <ConversationRow
-                      key={room.id}
-                      active={selectedConversation?.conversationId === room.conversationId}
-                      detail={room.lastMessagePreview ?? `${room.memberCount} members`}
-                      icon={<LockOutlinedIcon fontSize="small" />}
-                      label={`# ${room.name}`}
-                      onClick={() => setSelectedConversation(toRoomSelection(room))}
-                      unreadCount={room.unreadCount}
-                    />
-                  ))}
-                </List>
-              ) : (
-                <EmptySurface
-                  compact
-                  icon={<LockOutlinedIcon />}
-                  title="No private rooms"
-                  description="Private memberships will surface here when invitations are accepted."
-                />
-              )}
-            </SidebarCard>
-
-            <SidebarCard title="Contacts and directs" subtitle="Direct history and fast starts">
-              {filteredDirects.length > 0 ? (
-                <List disablePadding sx={{ display: "grid", gap: 0.75, mb: 1.25 }}>
-                  {filteredDirects.map((conversation) => (
-                    <ConversationRow
-                      key={conversation.conversationId}
-                      active={selectedConversation?.conversationId === conversation.conversationId}
-                      detail={
-                        conversation.accessMode === "read_only"
-                          ? "Read-only history"
-                          : conversation.lastMessagePreview ?? "Ready to chat"
-                      }
-                      label={conversation.targetUserName}
-                      onClick={() => setSelectedConversation(toDirectSelection(conversation))}
-                      unreadCount={conversation.unreadCount}
-                      avatarTone="direct"
-                    />
-                  ))}
-                </List>
-              ) : null}
-
-              {filteredFriends.length > 0 ? (
-                <Stack spacing={1}>
+              </Box>
+            ) : (
+              <>
+                <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
                   <Typography variant="overline" color="text.secondary">
-                    Confirmed friends
+                    Room info
                   </Typography>
-                  {filteredFriends.map((friend) => (
-                    <Button
-                      key={friend.userId}
-                      onClick={() => void handleOpenDirect(friend.userName)}
-                      variant="text"
-                      startIcon={<PersonOutlineIcon />}
-                      sx={{ justifyContent: "flex-start", px: 1.5, py: 1.1 }}
-                      disabled={openingDirectUserName === friend.userName}
-                    >
-                      {openingDirectUserName === friend.userName ? `Opening ${friend.userName}…` : `Message ${friend.userName}`}
-                    </Button>
-                  ))}
-                </Stack>
-              ) : (
-                <EmptySurface
-                  compact
-                  icon={<PersonOutlineIcon />}
-                  title="No direct history yet"
-                  description="Confirmed friends appear here as quick-start actions when PM policy allows it."
-                />
-              )}
-            </SidebarCard>
-
-            <SidebarCard title="Public catalog" subtitle="Quick join">
-              {filteredPublicCatalog.length > 0 ? (
-                <Stack spacing={1}>
-                  {filteredPublicCatalog.slice(0, 6).map((room) => (
-                    <Paper
-                      key={room.id}
+                  <Typography variant="h3" sx={{ mt: 0.5 }}>
+                    # {activeRoom.name}
+                  </Typography>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}>
+                    <Chip
+                      label={activeRoom.isPrivate ? "Private" : "Public"}
+                      size="small"
+                      color={activeRoom.isPrivate ? "secondary" : "default"}
                       variant="outlined"
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 2.25,
-                        bgcolor: alpha("#fff", 0.03),
-                        borderColor: alpha("#fff", 0.08),
-                      }}
-                    >
-                      <Stack direction="row" spacing={1.5} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="subtitle1"># {room.name}</Typography>
-                          <Typography color="text.secondary" variant="body2">
-                            {room.description ?? "No description yet."}
-                          </Typography>
-                        </Box>
-                        <Button
+                    />
+                    <Chip
+                      label={activeRoom.isOwner ? "Owner" : activeRoom.isAdmin ? "Admin" : "Member"}
+                      size="small"
+                      variant="outlined"
+                    />
+                    <Chip label={`${activeRoom.memberCount} members`} size="small" variant="outlined" />
+                  </Stack>
+                  {activeRoom.description ? (
+                    <Typography color="text.secondary" variant="body2" sx={{ mt: 1.25 }}>
+                      {activeRoom.description}
+                    </Typography>
+                  ) : null}
+                </Box>
+
+                {activeRoomDetails && activeRoomDetails.admins.length > 0 ? (
+                  <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
+                    <Typography variant="overline" color="text.secondary">
+                      Owner & Admins
+                    </Typography>
+                    <Stack direction="row" spacing={0.5} useFlexGap sx={{ mt: 0.75, flexWrap: "wrap" }}>
+                      {activeRoomDetails.admins.map((admin) => (
+                        <Chip
+                          key={admin.userId}
+                          avatar={
+                            <Avatar sx={{ bgcolor: alpha(admin.isOwner ? "#f08ab7" : "#66c8ff", 0.2), fontSize: "0.75rem" }}>
+                              {admin.userName.slice(0, 1).toUpperCase()}
+                            </Avatar>
+                          }
+                          label={admin.userName}
                           size="small"
                           variant="outlined"
-                          disabled={room.isMember || room.isBanned || joiningRoomId === room.id}
-                          onClick={() => void handleJoinRoom(room)}
+                          color={admin.isOwner ? "secondary" : "default"}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                ) : null}
+
+                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", p: 2 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.25, justifyContent: "space-between" }}>
+                    <Typography variant="overline" color="text.secondary">
+                      Members ({activeRoomDetails?.members.length ?? activeRoom.memberCount})
+                    </Typography>
+                  </Stack>
+
+                  {activeRoomDetailsLoading ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+                      <CircularProgress size={20} />
+                    </Box>
+                  ) : activeRoomDetails ? (
+                    <Stack spacing={0.5}>
+                      {activeRoomDetails.members.map((member) => (
+                        <Stack
+                          key={member.userId}
+                          direction="row"
+                          spacing={1.25}
+                          sx={{
+                            alignItems: "center",
+                            px: 1,
+                            py: 0.75,
+                            borderRadius: 1.5,
+                            "&:hover": { bgcolor: alpha("#fff", 0.03) },
+                          }}
                         >
-                          {room.isMember ? "Joined" : room.isBanned ? "Banned" : joiningRoomId === room.id ? "Joining…" : "Join"}
-                        </Button>
-                      </Stack>
-                    </Paper>
-                  ))}
-                </Stack>
-              ) : (
-                <EmptySurface
-                  compact
-                  icon={<GroupOutlinedIcon />}
-                  title="No public rooms"
-                  description="As room creation grows later, searchable catalog results will appear here."
-                />
-              )}
-            </SidebarCard>
-          </Stack>
-
-          <Stack spacing={2} sx={{ order: { xs: 3, xl: 3 } }}>
-            <SidebarCard
-              title={selectedConversation?.title ?? "Waiting for selection"}
-              subtitle="Context panel"
-              action={
-                activeRoom ? (
-                  <Button
-                    onClick={() => setRoomManagerOpen(true)}
-                    size="small"
-                    startIcon={<SettingsIcon />}
-                    variant="outlined"
-                  >
-                    Manage room
-                  </Button>
-                ) : null
-              }
-            >
-              <Typography color="text.secondary" variant="body2">
-                {selectedConversation?.subtitle ??
-                  "Room membership and direct-message policy still live on the backend; this panel surfaces the current slice of that state."}
-              </Typography>
-
-              {selectedConversation?.kind === "direct" ? (
-                <Stack spacing={1.25} sx={{ mt: 1.5 }}>
-                  <ContextMetric label="Access mode" value={selectedConversation.accessMode === "read_only" ? "Read only" : "Read/write"} />
-                  <ContextMetric label="Unread" value={selectedConversation.direct.unreadCount} />
-                  <ContextMetric label="Messages" value={selectedConversation.direct.messageCount} />
-                  <ContextMetric label="Latest watermark" value={selectedConversation.direct.latestWatermark} />
-                </Stack>
-              ) : null}
-
-              {activeRoom ? (
-                <Stack spacing={1.25} sx={{ mt: 1.5 }}>
-                  <ContextMetric label="Visibility" value={activeRoom.isPrivate ? "Private" : "Public"} />
-                  <ContextMetric label="Members" value={activeRoom.memberCount} />
-                  <ContextMetric label="Unread" value={activeRoom.unreadCount} />
-                  <ContextMetric label="Your role" value={activeRoom.isOwner ? "Owner" : activeRoom.isAdmin ? "Admin" : "Member"} />
-                </Stack>
-              ) : null}
-            </SidebarCard>
-
-            <SidebarCard title="Room members" subtitle="Current room context">
-              {!activeRoom ? (
-                <EmptySurface
-                  compact
-                  icon={<GroupOutlinedIcon />}
-                  title="Members appear on room views"
-                  description="Open a room to inspect its current member list, admin roles, and moderation context."
-                />
-              ) : activeRoomDetailsLoading ? (
-                <EmptySurface compact icon={<CircularProgress size={22} />} title="Loading room context" description="Fetching member and admin detail from the existing room endpoint." />
-              ) : activeRoomDetails ? (
-                <Stack spacing={1}>
-                  {activeRoomDetails.members.slice(0, 8).map((member) => (
-                    <Paper
-                      key={member.userId}
-                      variant="outlined"
-                      sx={{
-                        p: 1.25,
-                        borderRadius: 2,
-                        bgcolor: alpha("#fff", 0.03),
-                        borderColor: alpha("#fff", 0.08),
-                      }}
-                    >
-                      <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", justifyContent: "space-between" }}>
-                        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", minWidth: 0 }}>
-                          <Avatar sx={{ width: 32, height: 32, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light" }}>
-                            {member.userName.slice(0, 1).toUpperCase()}
-                          </Avatar>
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography variant="subtitle2" sx={{ textTransform: "none", letterSpacing: 0 }}>
+                          <Box sx={{ position: "relative" }}>
+                            <Avatar sx={{ width: 30, height: 30, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light", fontSize: "0.8rem" }}>
+                              {member.userName.slice(0, 1).toUpperCase()}
+                            </Avatar>
+                            <PresenceDot state="offline" />
+                          </Box>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
                               {member.userName}
                             </Typography>
-                            <Typography color="text.secondary" variant="caption">
-                              Joined {formatDateTime(member.joinedAtUtc)}
+                            <Typography color="text.secondary" variant="caption" noWrap>
+                              {member.isOwner ? "Owner" : member.isAdmin ? "Admin" : "Member"}
                             </Typography>
                           </Box>
                         </Stack>
-                        <Stack direction="row" spacing={0.75}>
-                          {member.isOwner ? <Chip size="small" label="Owner" color="secondary" /> : null}
-                          {member.isAdmin ? <Chip size="small" label="Admin" variant="outlined" /> : null}
-                          <Tooltip title="Presence is not currently included in the room member payload.">
-                            <CircleIcon fontSize="small" sx={{ color: "text.disabled", alignSelf: "center" }} />
-                          </Tooltip>
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  ))}
-                </Stack>
-              ) : (
-                <EmptySurface
-                  compact
-                  icon={<WarningAmberIcon />}
-                  title="Member context unavailable"
-                  description="The room detail request did not return member data, so the panel is showing a safe fallback."
-                />
-              )}
-            </SidebarCard>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography color="text.secondary" variant="body2">
+                      Member list unavailable.
+                    </Typography>
+                  )}
+                </Box>
 
-            <SidebarCard title="Sync and policy" subtitle="Server-authoritative behavior">
-              <Stack spacing={1.25}>
-                <ContextMetric label="Invites" value={roomDirectory?.pendingInvitations.length ?? 0} />
-                <ContextMetric label="Friend requests" value={contactSummary?.incomingFriendRequests.length ?? 0} />
-                <ContextMetric label="Outgoing bans" value={contactSummary?.bansIssued.length ?? 0} />
-                <Divider />
-                <Typography color="text.secondary" variant="body2">
-                  Hub path: {realtimeContract?.hubPath ?? "/hubs/realtime"}
-                </Typography>
-                <Typography color="text.secondary" variant="body2">
-                  Groups: {realtimeContract?.conversationGroupPattern ?? "conversation:{conversationId}"}
-                </Typography>
-                <Typography color="text.secondary" variant="body2">
-                  Sync mode: {realtimeContract?.syncMode ?? "rest-gap-repair"}
-                </Typography>
-              </Stack>
-            </SidebarCard>
-          </Stack>
+                <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider" }}>
+                  <Stack spacing={1}>
+                    {activeRoomDetails?.permissions.canInvite ? (
+                      <Button
+                        fullWidth
+                        onClick={() => setInviteOpen(true)}
+                        startIcon={<PersonAddIcon />}
+                        variant="outlined"
+                      >
+                        Invite user
+                      </Button>
+                    ) : null}
+                    <Button
+                      fullWidth
+                      onClick={() => setRoomManagerOpen(true)}
+                      startIcon={<SettingsIcon />}
+                      variant="contained"
+                    >
+                      Manage room
+                    </Button>
+                  </Stack>
+                </Box>
+              </>
+            )}
+          </Card>
         </Box>
       ) : null}
+
+      {/* CREATE ROOM DIALOG */}
+      <Dialog open={createRoomOpen} onClose={() => setCreateRoomOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Create a new room</DialogTitle>
+        <Box component="form" onSubmit={handleCreateRoom}>
+          <DialogContent>
+            <Stack spacing={2.5} sx={{ mt: 0.5 }}>
+              <TextField
+                autoFocus
+                fullWidth
+                label="Room name"
+                onChange={(event) => setCreateRoomDraft((current) => ({ ...current, name: event.target.value }))}
+                required
+                value={createRoomDraft.name}
+              />
+              <TextField
+                fullWidth
+                label="Description (optional)"
+                multiline
+                minRows={3}
+                onChange={(event) => setCreateRoomDraft((current) => ({ ...current, description: event.target.value }))}
+                value={createRoomDraft.description}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={createRoomDraft.isPrivate}
+                    onChange={(event) => setCreateRoomDraft((current) => ({ ...current, isPrivate: event.target.checked }))}
+                  />
+                }
+                label={createRoomDraft.isPrivate ? "Private (invite only)" : "Public (anyone can join)"}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button onClick={() => setCreateRoomOpen(false)}>Cancel</Button>
+            <Button disabled={creatingRoom || !createRoomDraft.name.trim()} type="submit" variant="contained">
+              {creatingRoom ? "Creating…" : "Create room"}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      {/* INVITE USER DIALOG */}
+      <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Invite a user</DialogTitle>
+        <Box component="form" onSubmit={handleInviteUser}>
+          <DialogContent>
+            <TextField
+              autoFocus
+              fullWidth
+              label="Username"
+              onChange={(event) => setInviteDraft(event.target.value)}
+              required
+              value={inviteDraft}
+              sx={{ mt: 1 }}
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button onClick={() => setInviteOpen(false)}>Cancel</Button>
+            <Button disabled={invitingUser || !inviteDraft.trim()} type="submit" variant="contained">
+              {invitingUser ? "Sending…" : "Send invite"}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
 
       {activeRoom ? (
         <RoomManagementModal
@@ -1664,36 +1856,6 @@ function StatePanel({ title, subtitle, detail, action }: StatePanelProps) {
   );
 }
 
-type SidebarCardProps = {
-  title: string;
-  subtitle: string;
-  children: ReactNode;
-  action?: ReactNode;
-};
-
-function SidebarCard({ title, subtitle, children, action }: SidebarCardProps) {
-  return (
-    <Card>
-      <CardContent sx={{ p: 2 }}>
-        <Stack spacing={1.5}>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: "flex-start", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="overline" color="text.secondary">
-                {subtitle}
-              </Typography>
-              <Typography variant="h3" sx={{ mt: 0.25 }}>
-                {title}
-              </Typography>
-            </Box>
-            {action}
-          </Stack>
-          {children}
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}
-
 type EmptySurfaceProps = {
   title: string;
   description: string;
@@ -1724,6 +1886,8 @@ function EmptySurface({ title, description, icon, compact = false }: EmptySurfac
   );
 }
 
+type PresenceState = "online" | "afk" | "offline";
+
 type ConversationRowProps = {
   label: string;
   detail: string;
@@ -1732,28 +1896,43 @@ type ConversationRowProps = {
   unreadCount: number;
   icon?: ReactNode;
   avatarTone?: "room" | "direct";
+  presence?: PresenceState;
 };
 
-function ConversationRow({ label, detail, active, onClick, unreadCount, icon, avatarTone = "room" }: ConversationRowProps) {
+function ConversationRow({
+  label,
+  detail,
+  active,
+  onClick,
+  unreadCount,
+  icon,
+  avatarTone = "room",
+  presence,
+}: ConversationRowProps) {
   return (
-    <ListItemButton selected={active} onClick={onClick}>
+    <ListItemButton selected={active} onClick={onClick} sx={{ borderRadius: 2, py: 0.75 }}>
       <Stack direction="row" spacing={1.25} sx={{ width: "100%", alignItems: "center" }}>
         <Badge badgeContent={unreadCount > 0 ? unreadCount : 0} color="secondary" invisible={unreadCount <= 0}>
-          <Avatar
-            sx={{
-              width: 34,
-              height: 34,
-              bgcolor: avatarTone === "direct" ? alpha("#66c8ff", 0.12) : alpha("#f08ab7", 0.12),
-              color: avatarTone === "direct" ? "primary.light" : "secondary.light",
-            }}
-          >
-            {icon ?? label.replace(/^#\s*/, "").slice(0, 1).toUpperCase()}
-          </Avatar>
+          <Box sx={{ position: "relative" }}>
+            <Avatar
+              sx={{
+                width: 32,
+                height: 32,
+                bgcolor: avatarTone === "direct" ? alpha("#66c8ff", 0.12) : alpha("#f08ab7", 0.12),
+                color: avatarTone === "direct" ? "primary.light" : "secondary.light",
+                fontSize: "0.85rem",
+              }}
+            >
+              {icon ?? label.replace(/^#\s*/, "").slice(0, 1).toUpperCase()}
+            </Avatar>
+            {presence ? <PresenceDot state={presence} /> : null}
+          </Box>
         </Badge>
 
         <ListItemText
+          sx={{ my: 0 }}
           primary={
-            <Typography variant="subtitle2" sx={{ textTransform: "none", letterSpacing: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, letterSpacing: 0 }} noWrap>
               {label}
             </Typography>
           }
@@ -1763,7 +1942,7 @@ function ConversationRow({ label, detail, active, onClick, unreadCount, icon, av
               variant="caption"
               sx={{
                 display: "block",
-                mt: 0.25,
+                mt: 0.1,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -1773,12 +1952,69 @@ function ConversationRow({ label, detail, active, onClick, unreadCount, icon, av
             </Typography>
           }
         />
-
-        <Tooltip title="Presence is not included in the current chat summary payload.">
-          <CircleIcon fontSize="small" sx={{ color: "text.disabled" }} />
-        </Tooltip>
       </Stack>
     </ListItemButton>
+  );
+}
+
+type SidebarSectionProps = {
+  id?: string;
+  title: string;
+  count?: number;
+  children: ReactNode;
+};
+
+function SidebarSection({ id, title, count, children }: SidebarSectionProps) {
+  return (
+    <Box id={id}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 0.5, mb: 0.75 }}>
+        <Typography variant="overline" color="text.secondary" sx={{ flex: 1, lineHeight: 1.2 }}>
+          {title}
+        </Typography>
+        {typeof count === "number" ? (
+          <Typography variant="caption" color="text.disabled">
+            {count}
+          </Typography>
+        ) : null}
+      </Stack>
+      {children}
+    </Box>
+  );
+}
+
+const presenceColor: Record<PresenceState, string> = {
+  online: "#3ecf8e",
+  afk: "#f5b840",
+  offline: "#6b7280",
+};
+
+function PresenceDot({ state }: { state: PresenceState }) {
+  return (
+    <Box
+      sx={{
+        position: "absolute",
+        bottom: -2,
+        right: -2,
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        bgcolor: presenceColor[state],
+        border: "2px solid",
+        borderColor: "background.paper",
+      }}
+    />
+  );
+}
+
+function OlderMessagesDivider({ label }: { label: string }) {
+  return (
+    <Stack direction="row" spacing={1.5} sx={{ py: 1, alignItems: "center" }}>
+      <Divider sx={{ flex: 1, borderColor: alpha("#fff", 0.06) }} />
+      <Typography variant="caption" color="text.disabled" sx={{ textTransform: "uppercase", letterSpacing: 0.6 }}>
+        {label}
+      </Typography>
+      <Divider sx={{ flex: 1, borderColor: alpha("#fff", 0.06) }} />
+    </Stack>
   );
 }
 
@@ -1806,35 +2042,6 @@ function InlineComposerState({ label, onClear }: InlineComposerStateProps) {
         </Button>
       </Stack>
     </Paper>
-  );
-}
-
-type ContextMetricProps = {
-  label: string;
-  value: ReactNode;
-};
-
-function ContextMetric({ label, value }: ContextMetricProps) {
-  return (
-    <Stack
-      direction="row"
-      spacing={1.5}
-      sx={{
-        p: 1.25,
-        borderRadius: 2,
-        bgcolor: alpha("#fff", 0.03),
-        border: "1px solid rgba(255,255,255,0.06)",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}
-    >
-      <Typography color="text.secondary" variant="body2">
-        {label}
-      </Typography>
-      <Typography variant="subtitle2" sx={{ textTransform: "none", letterSpacing: 0 }}>
-        {value}
-      </Typography>
-    </Stack>
   );
 }
 
