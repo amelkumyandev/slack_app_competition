@@ -8,6 +8,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/docker-compose-bootstrap` adds Dockerfiles, Compose services, healthchecks, and startup docs.
 - `feat/auth-and-account-core` adds cookie-backed registration, login, password management, and current-session logout foundations.
 - `feat/session-management-screen` adds the persisted sessions API, selective revoke flow, and the first interactive web workspace at `/sessions`.
+- `feat/friends-and-user-ban` adds the contacts/social-graph API for friend requests, friendship removal, user bans, and direct-message authorization checks.
 - Business features are intentionally not implemented yet.
 
 ## Planned Stack
@@ -130,6 +131,27 @@ The web app includes a focused `/sessions` route that can:
 - list other persisted sessions
 - revoke another session without logging out the current browser
 
+## Current Contacts API
+
+The contacts slice now exposes:
+
+- `GET /api/contacts`
+- `POST /api/contacts/friend-requests`
+- `POST /api/contacts/friend-requests/{requestId}/accept`
+- `POST /api/contacts/friend-requests/{requestId}/decline`
+- `POST /api/contacts/friends/remove`
+- `POST /api/contacts/bans`
+- `POST /api/contacts/bans/remove`
+- `GET /api/contacts/pm-policy/{targetUserName}`
+
+This branch is backend-first. It establishes:
+
+- friend requests sent by username
+- accept and decline flows
+- friendship removal
+- user-to-user bans
+- direct-message policy checks that allow PMs only for confirmed friends and freeze them after a ban
+
 ## Environment Contract
 
 Copy `.env.example` to `.env` if you want to override the defaults. The Compose file is written with safe fallbacks, so the stack can still start without a local `.env` file.
@@ -184,6 +206,7 @@ Recommended early merge order:
 3. `feat/auth-and-account-core`
 4. `feat/session-management-screen`
 5. `feat/friends-and-user-ban`
+6. `feat/rooms-membership-and-moderation`
 
 ## Notes
 

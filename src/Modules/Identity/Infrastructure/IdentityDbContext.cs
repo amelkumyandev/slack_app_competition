@@ -11,6 +11,12 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<PasswordResetTokenRecord> PasswordResetTokens => Set<PasswordResetTokenRecord>();
 
+    public DbSet<FriendRequest> FriendRequests => Set<FriendRequest>();
+
+    public DbSet<Friendship> Friendships => Set<Friendship>();
+
+    public DbSet<UserBan> UserBans => Set<UserBan>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var userAccounts = modelBuilder.Entity<UserAccount>();
@@ -44,5 +50,47 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .HasForeignKey(token => token.UserAccountId)
             .OnDelete(DeleteBehavior.Cascade);
         resetTokens.HasIndex(token => token.TokenHash).IsUnique();
+
+        var friendRequests = modelBuilder.Entity<FriendRequest>();
+        friendRequests.ToTable("friend_requests");
+        friendRequests.HasKey(request => request.Id);
+        friendRequests.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(request => request.RequesterUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        friendRequests.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(request => request.AddresseeUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        friendRequests.HasIndex(request => new { request.RequesterUserId, request.Status });
+        friendRequests.HasIndex(request => new { request.AddresseeUserId, request.Status });
+        friendRequests.HasIndex(request => new { request.RequesterUserId, request.AddresseeUserId, request.Status });
+
+        var friendships = modelBuilder.Entity<Friendship>();
+        friendships.ToTable("friendships");
+        friendships.HasKey(friendship => friendship.Id);
+        friendships.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(friendship => friendship.FirstUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        friendships.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(friendship => friendship.SecondUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        friendships.HasIndex(friendship => new { friendship.FirstUserId, friendship.SecondUserId }).IsUnique();
+
+        var userBans = modelBuilder.Entity<UserBan>();
+        userBans.ToTable("user_bans");
+        userBans.HasKey(userBan => userBan.Id);
+        userBans.Property(userBan => userBan.Reason).HasMaxLength(512);
+        userBans.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(userBan => userBan.SourceUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        userBans.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(userBan => userBan.TargetUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        userBans.HasIndex(userBan => new { userBan.SourceUserId, userBan.TargetUserId }).IsUnique();
     }
 }
