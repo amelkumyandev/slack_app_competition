@@ -148,6 +148,15 @@ Useful environment overrides:
 - `QA_HISTORY_MESSAGE_COUNT`, `QA_HISTORY_REPAIR_WINDOW`, and `QA_HISTORY_PAGE_SIZE` for the history scenario
 - `QA_FANOUT_USER_COUNT`, `QA_FANOUT_MESSAGE_COUNT`, and `QA_FANOUT_TIMEOUT_MS` for the realtime fan-out scenario
 
+## Local Frontend/Auth Note
+
+The frontend auth flow uses cookie-backed sessions against the API. For local work, try to open both apps on the same loopback host family:
+
+- `http://localhost:3000` with `http://localhost:8080`, or
+- `http://127.0.0.1:3000` with `http://127.0.0.1:8080`
+
+The frontend now auto-aligns the API hostname with the browser hostname for loopback development, which avoids common cookie/CORS authorization glitches caused by mixing `localhost` and `127.0.0.1`.
+
 The QA scripts do not rely on fixed demo credentials. They create fresh temporary users and rooms on each run so a clean Docker reset is enough to start over.
 
 ## Current Auth API

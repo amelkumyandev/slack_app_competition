@@ -16,7 +16,7 @@ builder.Services.AddCors(options =>
         var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:3000"];
 
         policy
-            .WithOrigins(allowedOrigins)
+            .SetIsOriginAllowed(origin => IsAllowedWebOrigin(origin, allowedOrigins))
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -91,5 +91,20 @@ app.MapAttachmentsModule();
 app.MapRoomsModule();
 
 app.Run();
+
+static bool IsAllowedWebOrigin(string origin, string[] configuredOrigins)
+{
+    if (configuredOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+    {
+        return false;
+    }
+
+    return uri.Scheme is "http" or "https" && uri.Host is "localhost" or "127.0.0.1" or "::1";
+}
 
 public partial class Program;
