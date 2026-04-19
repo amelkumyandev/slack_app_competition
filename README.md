@@ -1,12 +1,12 @@
 # Slack App Competition
 
-This repository starts the competition entry as a **single monorepo** with a **modular monolith ASP.NET Core backend** and a **Next.js frontend**. The current branch provides the initial scaffold only: structure, naming, starter apps, and repo-level conventions.
+This repository starts the competition entry as a **single monorepo** with a **modular monolith ASP.NET Core backend** and a **Next.js frontend**. The current state includes the scaffold plus the initial Docker bootstrap for local full-stack startup.
 
 ## Current Status
 
-- `feat/scaffold-monorepo` establishes the monorepo layout and app shells.
+- `feat/scaffold-monorepo` established the monorepo layout and starter apps.
+- `feat/docker-compose-bootstrap` adds Dockerfiles, Compose services, healthchecks, and startup docs.
 - Business features are intentionally not implemented yet.
-- `docker compose up --build` will be added in `feat/docker-compose-bootstrap`.
 
 ## Planned Stack
 
@@ -59,22 +59,78 @@ The module folders already exist so feature branches can land cleanly:
 - `Administration`
 - `XmppBridge` (parked until phase 2)
 
-## Starter Commands
+## Startup Commands
 
-The scaffold keeps the root entry points simple:
+These are the commands this branch aims to keep stable:
 
 ```bash
+docker compose up --build
 dotnet build
+dotnet test
 dotnet run --project apps/api
 npm install
+npm run build
+npm run lint
+npm run test
 npm run dev:web
 ```
 
-`docker compose up --build` is a documented target but is not part of this branch yet.
+For local API-only work, `npm install` is only needed when you want to run the web app or frontend checks.
+
+## Docker Startup
+
+The baseline local stack runs from the repo root:
+
+```bash
+docker compose up --build
+```
+
+Expected URLs:
+
+- Web UI: `http://localhost:3000`
+- API: `http://localhost:8080`
+- API health: `http://localhost:8080/healthz`
+
+The Compose stack includes:
+
+- `web` for the Next.js app
+- `api` for the ASP.NET Core host
+- `postgres` for durable data
+- `redis` for presence and ephemeral coordination
+- `uploads_data` as the mounted local attachment volume
 
 ## Environment Contract
 
-Copy `.env.example` to `.env` when you begin wiring local services. The variables are named to match the planned web, API, PostgreSQL, Redis, and uploads contracts.
+Copy `.env.example` to `.env` if you want to override the defaults. The Compose file is written with safe fallbacks, so the stack can still start without a local `.env` file.
+
+The main variables cover:
+
+- API and web host ports
+- PostgreSQL credentials
+- Redis port
+- uploads storage location
+- browser-visible API and SignalR URLs
+
+## Local Reset
+
+To stop the stack:
+
+```bash
+docker compose down
+```
+
+To stop it and clear persisted local data:
+
+```bash
+docker compose down --volumes
+```
+
+## Troubleshooting
+
+- If `web` fails during build, confirm `npm install` completed successfully once in the repo root and that your lockfile is up to date.
+- If `api` cannot connect later during feature work, check the Compose-provided `ConnectionStrings__Postgres` and `ConnectionStrings__Redis` environment values.
+- If ports `3000`, `8080`, `5432`, or `6379` are already in use, override them in `.env`.
+- If you need container logs, use `docker compose logs -f web api postgres redis`.
 
 ## Reading Order
 
@@ -100,5 +156,5 @@ Recommended early merge order:
 ## Notes
 
 - The backend remains a single deployment unit with clear internal boundaries.
-- SignalR, PostgreSQL, Redis, and filesystem storage are planned into the shape now, even though they are not wired yet.
+- SignalR, PostgreSQL, Redis, and filesystem storage are planned into the shape now, even though the business flows are not wired yet.
 - XMPP stays out of phase 1 work until the core scope is stable.

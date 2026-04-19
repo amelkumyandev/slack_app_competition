@@ -7,6 +7,7 @@
   ],
   "scripts": {
     "build": "npm --workspace apps/web run build",
+    "dev:api": "dotnet run --project apps/api",
     "dev:web": "npm --workspace apps/web run dev",
     "lint": "npm --workspace apps/web run lint",
     "test": "npm --workspace apps/web run test"
