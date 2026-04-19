@@ -7,7 +7,6 @@ import {
   ArrowDropDown as ArrowDropDownIcon,
   Forum as ForumIcon,
   Logout as LogoutIcon,
-  Person as PersonIcon,
 } from "@mui/icons-material";
 import {
   AppBar,
@@ -140,9 +139,6 @@ export function ChatShell({ children }: ChatShellProps) {
             <Button color="inherit" onClick={() => handleScrollToSection("contacts")}>
               Contacts
             </Button>
-            <Button color="inherit" component={Link} href="/sessions">
-              Sessions
-            </Button>
           </Stack>
 
           <Box sx={{ flex: 1, display: { xs: "block", md: "none" } }} />
@@ -214,19 +210,6 @@ export function ChatShell({ children }: ChatShellProps) {
                 {currentUser?.email ?? ""}
               </Typography>
             </Box>
-            <Divider />
-            <MenuItem component={Link} href="/sessions" onClick={() => setProfileAnchorEl(null)}>
-              <ListItemIcon>
-                <PersonIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Sessions</ListItemText>
-            </MenuItem>
-            <MenuItem component={Link} href="/presence" onClick={() => setProfileAnchorEl(null)}>
-              <ListItemIcon>
-                <PersonIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Presence</ListItemText>
-            </MenuItem>
             <Divider />
             <MenuItem onClick={() => void handleSignOut()} disabled={signingOut}>
               <ListItemIcon>
