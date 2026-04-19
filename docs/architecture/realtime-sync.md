@@ -43,6 +43,35 @@ Use SignalR groups to avoid broad fan-out:
 
 The server should add connections to user and open-conversation groups as needed.
 
+## 3.1 Current hub foundation
+
+The current implementation exposes:
+
+- hub route: `/hubs/realtime`
+- contract endpoint: `GET /api/realtime/contract`
+
+Current hub methods:
+
+- `SubscribeConversation`
+- `UnsubscribeConversation`
+- `Ping`
+
+Current client events:
+
+- `connection.ready`
+- `subscription.updated`
+- `event.received`
+
+Current conversation key support:
+
+- `room:{roomId}`
+
+That means the current SignalR group for a room conversation is:
+
+- `conversation:room:{roomId}`
+
+This keeps the naming aligned with the broader conversation model while the unified `conversation_id` table lands in later branches.
+
 ## 4. Watermark contract
 
 Every message event must include:

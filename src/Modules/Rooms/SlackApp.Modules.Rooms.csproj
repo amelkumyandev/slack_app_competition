@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Identity\SlackApp.Modules.Identity.csproj" />
+    <ProjectReference Include="..\Presence\SlackApp.Modules.Presence.csproj" />
   </ItemGroup>
 
 </Project>

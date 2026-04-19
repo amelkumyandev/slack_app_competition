@@ -10,6 +10,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/session-management-screen` adds the persisted sessions API, selective revoke flow, and the first interactive web workspace at `/sessions`.
 - `feat/friends-and-user-ban` adds the contacts/social-graph API for friend requests, friendship removal, user bans, and direct-message authorization checks.
 - `feat/rooms-membership-and-moderation` adds backend room creation, public catalog search, public joins, private invitations, admin assignment, and remove-member-as-ban moderation flows.
+- `feat/realtime-signalr-foundation` adds the authenticated SignalR hub, user and conversation groups, and realtime event routing for room/contact hints.
 - Business features are intentionally not implemented yet.
 
 ## Planned Stack
@@ -180,6 +181,32 @@ This branch is backend-first. It establishes:
 - remove-member behavior that also applies a room ban
 - rejoin prevention until explicit unban
 
+## Current Realtime Contract
+
+The realtime foundation now exposes:
+
+- `GET /api/realtime/contract`
+- `SignalR hub: /hubs/realtime`
+
+Current hub methods:
+
+- `SubscribeConversation`
+- `UnsubscribeConversation`
+- `Ping`
+
+Current client events:
+
+- `connection.ready`
+- `subscription.updated`
+- `event.received`
+
+Current foundation guarantees:
+
+- authenticated connections automatically join `user:{userId}`
+- room members can subscribe to `conversation:room:{roomId}`
+- room/contact actions publish targeted realtime hints without polling
+- reconnect strategy remains REST-based for gap repair rather than per-user queues
+
 ## Environment Contract
 
 Copy `.env.example` to `.env` if you want to override the defaults. The Compose file is written with safe fallbacks, so the stack can still start without a local `.env` file.
@@ -236,9 +263,10 @@ Recommended early merge order:
 5. `feat/friends-and-user-ban`
 6. `feat/rooms-membership-and-moderation`
 7. `feat/realtime-signalr-foundation`
+8. `feat/presence-heartbeats-and-hibernation`
 
 ## Notes
 
 - The backend remains a single deployment unit with clear internal boundaries.
-- SignalR, PostgreSQL, Redis, and filesystem storage are planned into the shape now, even though the business flows are not wired yet.
+- SignalR, PostgreSQL, Redis, and filesystem storage are now part of the active implementation path, with richer messaging and presence behavior still coming in later branches.
 - XMPP stays out of phase 1 work until the core scope is stable.

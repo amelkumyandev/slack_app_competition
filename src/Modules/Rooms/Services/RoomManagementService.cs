@@ -4,11 +4,16 @@ using Microsoft.EntityFrameworkCore;
 using SlackApp.Modules.Identity.Contracts;
 using SlackApp.Modules.Identity.Domain;
 using SlackApp.Modules.Identity.Infrastructure;
+using SlackApp.Modules.Presence.Contracts;
+using SlackApp.Modules.Presence.Services;
 using SlackApp.Modules.Rooms.Contracts;
 
 namespace SlackApp.Modules.Rooms.Services;
 
-public sealed partial class RoomManagementService(IdentityDbContext dbContext, TimeProvider timeProvider)
+public sealed partial class RoomManagementService(
+    IdentityDbContext dbContext,
+    TimeProvider timeProvider,
+    IRealtimeNotifier realtimeNotifier)
 {
     public async Task<RoomServiceResult<RoomDirectoryResponse>> GetDirectoryAsync(
         Guid userId,
@@ -249,6 +254,16 @@ public sealed partial class RoomManagementService(IdentityDbContext dbContext, T
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyUsersAsync(
+            "room.created",
+            new
+            {
+                roomId = room.Id,
+                roomName = room.Name,
+                isPrivate = room.Visibility == RoomVisibility.Private
+            },
+            [ownerUserId],
+            cancellationToken);
 
         return RoomServiceResult<RoomListItemResponse>.Success(new RoomListItemResponse(
             room.Id,
@@ -305,6 +320,15 @@ public sealed partial class RoomManagementService(IdentityDbContext dbContext, T
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyConversationAsync(
+            "room.member.joined",
+            RealtimeGroups.RoomConversation(roomId),
+            new
+            {
+                roomId,
+                userId
+            },
+            cancellationToken);
 
         return RoomServiceResult<MessageResponse>.Success(new MessageResponse("Joined room."));
     }
@@ -430,6 +454,16 @@ public sealed partial class RoomManagementService(IdentityDbContext dbContext, T
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyUsersAsync(
+            "room.invitation.created",
+            new
+            {
+                roomId,
+                invitedUserId = targetUser.Value.Id,
+                invitedByUserId = actorUserId
+            },
+            [targetUser.Value.Id, actorUserId],
+            cancellationToken);
 
         return RoomServiceResult<MessageResponse>.Success(new MessageResponse("Invitation sent."));
     }
@@ -482,6 +516,25 @@ public sealed partial class RoomManagementService(IdentityDbContext dbContext, T
         invitation.Status = RoomInvitationStatus.Accepted;
         invitation.RespondedAtUtc = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyConversationAsync(
+            "room.member.joined",
+            RealtimeGroups.RoomConversation(invitation.RoomId),
+            new
+            {
+                roomId = invitation.RoomId,
+                userId
+            },
+            cancellationToken);
+        await realtimeNotifier.NotifyUsersAsync(
+            "room.invitation.accepted",
+            new
+            {
+                roomId = invitation.RoomId,
+                invitedUserId = userId,
+                invitedByUserId = invitation.InvitedByUserId
+            },
+            [userId, invitation.InvitedByUserId],
+            cancellationToken);
 
         return RoomServiceResult<MessageResponse>.Success(new MessageResponse("Invitation accepted."));
     }
@@ -573,6 +626,16 @@ public sealed partial class RoomManagementService(IdentityDbContext dbContext, T
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyConversationAsync(
+            "room.admin.granted",
+            RealtimeGroups.RoomConversation(roomId),
+            new
+            {
+                roomId,
+                userId = targetUser.Value.Id,
+                grantedByUserId = actorUserId
+            },
+            cancellationToken);
 
         return RoomServiceResult<MessageResponse>.Success(new MessageResponse("Room admin granted."));
     }
@@ -725,6 +788,26 @@ public sealed partial class RoomManagementService(IdentityDbContext dbContext, T
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyConversationAsync(
+            "room.member.removed",
+            RealtimeGroups.RoomConversation(roomId),
+            new
+            {
+                roomId,
+                userId = targetUser.Value.Id,
+                removedByUserId = actorUserId
+            },
+            cancellationToken);
+        await realtimeNotifier.NotifyUsersAsync(
+            "room.member.removed",
+            new
+            {
+                roomId,
+                userId = targetUser.Value.Id,
+                removedByUserId = actorUserId
+            },
+            [targetUser.Value.Id],
+            cancellationToken);
 
         return RoomServiceResult<MessageResponse>.Success(new MessageResponse("Member removed and room ban applied."));
     }

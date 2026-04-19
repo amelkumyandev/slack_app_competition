@@ -4,10 +4,14 @@ using SlackApp.Modules.Contacts.Contracts;
 using SlackApp.Modules.Identity.Contracts;
 using SlackApp.Modules.Identity.Domain;
 using SlackApp.Modules.Identity.Infrastructure;
+using SlackApp.Modules.Presence.Services;
 
 namespace SlackApp.Modules.Contacts.Services;
 
-public sealed class ContactManagementService(IdentityDbContext dbContext, TimeProvider timeProvider)
+public sealed class ContactManagementService(
+    IdentityDbContext dbContext,
+    TimeProvider timeProvider,
+    IRealtimeNotifier realtimeNotifier)
 {
     public async Task<ContactServiceResult<ContactSummaryResponse>> GetSummaryAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -128,16 +132,28 @@ public sealed class ContactManagementService(IdentityDbContext dbContext, TimePr
         }
 
         var now = timeProvider.GetUtcNow();
-        dbContext.FriendRequests.Add(new FriendRequest
+        var friendRequest = new FriendRequest
         {
             RequesterUserId = requesterUserId,
             AddresseeUserId = targetUser.Value.Id,
             SourceRoomId = request.SourceRoomId,
             RequestedAtUtc = now,
             Status = FriendRequestStatus.Pending
-        });
+        };
+        dbContext.FriendRequests.Add(friendRequest);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyUsersAsync(
+            "contact.friend-request.created",
+            new
+            {
+                friendRequestId = friendRequest.Id,
+                requesterUserId,
+                addresseeUserId = targetUser.Value.Id,
+                sourceRoomId = request.SourceRoomId
+            },
+            [requesterUserId, targetUser.Value.Id],
+            cancellationToken);
 
         return ContactServiceResult<MessageResponse>.Success(new MessageResponse("Friend request sent."));
     }
@@ -188,6 +204,16 @@ public sealed class ContactManagementService(IdentityDbContext dbContext, TimePr
         friendRequest.RespondedAtUtc = now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyUsersAsync(
+            "contact.friend-request.accepted",
+            new
+            {
+                friendRequestId,
+                requesterUserId = friendRequest.RequesterUserId,
+                addresseeUserId = friendRequest.AddresseeUserId
+            },
+            [friendRequest.RequesterUserId, friendRequest.AddresseeUserId],
+            cancellationToken);
 
         return ContactServiceResult<MessageResponse>.Success(new MessageResponse("Friend request accepted."));
     }
@@ -314,6 +340,16 @@ public sealed class ContactManagementService(IdentityDbContext dbContext, TimePr
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await realtimeNotifier.NotifyUsersAsync(
+            "contact.user-ban.created",
+            new
+            {
+                sourceUserId = currentUserId,
+                targetUserId = targetUser.Value.Id,
+                reason = Truncate(request.Reason, 512)
+            },
+            [currentUserId, targetUser.Value.Id],
+            cancellationToken);
 
         return ContactServiceResult<MessageResponse>.Success(new MessageResponse("User ban saved and PM access is now frozen."));
     }

@@ -11,6 +11,9 @@
   <Folder Name="/src/Modules/Identity/">
     <Project Path="src/Modules/Identity/SlackApp.Modules.Identity.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Presence/">
+    <Project Path="src/Modules/Presence/SlackApp.Modules.Presence.csproj" />
+  </Folder>
   <Folder Name="/src/Modules/Rooms/">
     <Project Path="src/Modules/Rooms/SlackApp.Modules.Rooms.csproj" />
   </Folder>
