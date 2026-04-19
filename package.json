@@ -1,0 +1,14 @@
+{
+  "name": "slack-app-competition",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm --workspace apps/web run build",
+    "dev:web": "npm --workspace apps/web run dev",
+    "lint": "npm --workspace apps/web run lint",
+    "test": "npm --workspace apps/web run test"
+  }
+}
