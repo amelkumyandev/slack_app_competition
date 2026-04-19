@@ -33,7 +33,7 @@ public sealed class RealtimeHub(
                 Context.ConnectionId,
                 userId,
                 userGroup,
-                "room:",
+                "conversation:",
                 "rest-gap-repair",
                 timeProvider.GetUtcNow()),
             Context.ConnectionAborted);
@@ -84,23 +84,24 @@ public sealed class RealtimeHub(
 
     public async Task<ConversationSubscriptionResponse> UnsubscribeConversation(string conversationKey)
     {
-        if (!conversationAccessService.TryBuildConversationGroup(conversationKey, out var normalizedConversationKey, out var groupName))
+        var resolution = await conversationAccessService.ResolveConversationGroupAsync(conversationKey, Context.ConnectionAborted);
+        if (!resolution.Succeeded)
         {
-            throw new HubException("Only room conversation keys are supported right now.");
+            throw new HubException("Only room and conversation keys are supported right now.");
         }
 
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName, Context.ConnectionAborted);
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, resolution.GroupName, Context.ConnectionAborted);
 
         var response = new ConversationSubscriptionResponse(
-            normalizedConversationKey,
-            groupName,
+            resolution.NormalizedConversationKey,
+            resolution.GroupName,
             "unsubscribed",
             timeProvider.GetUtcNow());
 
         logger.LogInformation(
             "Connection {ConnectionId} unsubscribed from {ConversationKey}",
             Context.ConnectionId,
-            normalizedConversationKey);
+            resolution.NormalizedConversationKey);
 
         await Clients.Caller.SendAsync(RealtimeClientMethods.SubscriptionUpdated, response, Context.ConnectionAborted);
         return response;

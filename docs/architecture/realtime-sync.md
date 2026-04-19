@@ -65,13 +65,14 @@ Current client events:
 
 Current conversation key support:
 
-- `room:{roomId}`
+- `conversation:{conversationId}`
+- legacy `room:{roomId}` resolution for backward-compatible room lookups
 
 That means the current SignalR group for a room conversation is:
 
-- `conversation:room:{roomId}`
+- `conversation:{conversationId}`
 
-This keeps the naming aligned with the broader conversation model while the unified `conversation_id` table lands in later branches.
+Room subscriptions now resolve to a durable conversation identifier, which keeps the naming aligned with the broader conversation model the messaging branch will continue to extend.
 
 ## 3.2 Current presence heartbeat contract
 
@@ -117,6 +118,8 @@ Example shape:
   "serverTimestamp": "2026-04-19T12:10:00Z"
 }
 ```
+
+Current realtime envelopes now carry `conversationId` and `watermark` directly for conversation-scoped events so clients can detect a gap without parsing event-specific payload fields.
 
 ## 5. Gap detection rule
 

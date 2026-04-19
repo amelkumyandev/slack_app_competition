@@ -28,7 +28,7 @@ public sealed class RealtimeHubTests
 
         Assert.Equal(currentUser!.Id, realtimeClient.Ready.UserId);
         Assert.Equal($"user:{currentUser.Id:D}", realtimeClient.Ready.UserGroup);
-        Assert.Equal("room:", realtimeClient.Ready.SupportedConversationPrefix);
+        Assert.Equal("conversation:", realtimeClient.Ready.SupportedConversationPrefix);
         Assert.Equal("rest-gap-repair", realtimeClient.Ready.SyncMode);
     }
 
@@ -49,15 +49,15 @@ public sealed class RealtimeHubTests
 
         var subscribed = await ownerRealtime.Connection.InvokeAsync<ConversationSubscriptionResponse>(
             RealtimeHubMethods.SubscribeConversation,
-            RealtimeGroups.RoomConversation(room.Id));
+            RealtimeGroups.ConversationId(room.ConversationId));
 
         Assert.Equal("subscribed", subscribed.Status);
-        Assert.Equal($"conversation:room:{room.Id:D}", subscribed.GroupName);
+        Assert.Equal($"conversation:{room.ConversationId:D}", subscribed.GroupName);
 
         var exception = await Assert.ThrowsAsync<HubException>(() =>
             outsiderRealtime.Connection.InvokeAsync<ConversationSubscriptionResponse>(
                 RealtimeHubMethods.SubscribeConversation,
-                RealtimeGroups.RoomConversation(room.Id)));
+                RealtimeGroups.ConversationId(room.ConversationId)));
 
         Assert.Contains("Only room members can subscribe", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -107,7 +107,7 @@ public sealed class RealtimeHubTests
 
         await ownerRealtime.Connection.InvokeAsync<ConversationSubscriptionResponse>(
             RealtimeHubMethods.SubscribeConversation,
-            RealtimeGroups.RoomConversation(room.Id));
+            RealtimeGroups.ConversationId(room.ConversationId));
 
         var joinResponse = await joinerClient.PostAsync($"/api/rooms/{room.Id}/join", content: null);
         Assert.Equal(HttpStatusCode.OK, joinResponse.StatusCode);
@@ -115,7 +115,9 @@ public sealed class RealtimeHubTests
         var roomEvent = await ownerRealtime.ReadEventAsync(TimeSpan.FromSeconds(5));
         Assert.Equal("room.member.joined", roomEvent.EventType);
         Assert.Equal("conversation", roomEvent.Scope);
-        Assert.Equal($"conversation:room:{room.Id:D}", roomEvent.Target);
+        Assert.Equal($"conversation:{room.ConversationId:D}", roomEvent.Target);
+        Assert.Equal(room.ConversationId, roomEvent.ConversationId);
+        Assert.True(roomEvent.Watermark >= 2);
 
         var outsiderReceived = await outsiderRealtime.TryReadEventAsync(TimeSpan.FromSeconds(1));
         Assert.Null(outsiderReceived);

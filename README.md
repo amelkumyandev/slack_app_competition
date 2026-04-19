@@ -12,6 +12,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/rooms-membership-and-moderation` adds backend room creation, public catalog search, public joins, private invitations, admin assignment, and remove-member-as-ban moderation flows.
 - `feat/realtime-signalr-foundation` adds the authenticated SignalR hub, user and conversation groups, and realtime event routing for room/contact hints.
 - `feat/presence-heartbeats-and-hibernation` adds per-tab presence heartbeats, aggregate online/AFK/offline inference, Redis-backed Docker storage with in-memory test fallback, and a live `/presence` workspace.
+- `feat/conversation-watermarks-and-gap-recovery` adds durable room-backed conversations, monotonic watermarks, conversation history paging, and REST sync repair for missed realtime events.
 - Business features are intentionally not implemented yet.
 
 ## Planned Stack
@@ -205,9 +206,24 @@ Current client events:
 Current foundation guarantees:
 
 - authenticated connections automatically join `user:{userId}`
-- room members can subscribe to `conversation:room:{roomId}`
+- room members can subscribe to `conversation:{conversationId}`
 - room/contact actions publish targeted realtime hints without polling
+- conversation events now carry `conversationId` and `watermark`
 - reconnect strategy remains REST-based for gap repair rather than per-user queues
+
+## Current Conversation Sync API
+
+The watermark slice now exposes:
+
+- `GET /api/conversations/{conversationId}/messages?beforeWatermark={n}&pageSize={k}`
+- `GET /api/conversations/{conversationId}/sync?afterWatermark={n}`
+
+Current conversation guarantees:
+
+- each room owns a durable `conversationId`
+- room activity is persisted into `conversation_messages` with monotonic per-conversation watermarks
+- missed realtime windows can be repaired through REST without any unbounded per-user queue
+- history paging is stable by watermark window, which sets up the long-history work in later branches
 
 ## Current Presence Contract
 
@@ -291,6 +307,7 @@ Recommended early merge order:
 7. `feat/realtime-signalr-foundation`
 8. `feat/presence-heartbeats-and-hibernation`
 9. `feat/conversation-watermarks-and-gap-recovery`
+10. `feat/messaging-core-and-history`
 
 ## Notes
 

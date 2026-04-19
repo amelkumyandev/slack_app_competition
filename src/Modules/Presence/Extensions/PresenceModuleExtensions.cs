@@ -55,9 +55,9 @@ public static class PresenceModuleExtensions
         app.MapGet("/api/realtime/contract", (Microsoft.Extensions.Options.IOptions<PresenceOptions> optionsAccessor) => Results.Ok(new
         {
             hubPath = "/hubs/realtime",
-            supportedConversationPrefix = "room:",
+            supportedConversationPrefix = "conversation:",
             userGroupPattern = "user:{userId}",
-            conversationGroupPattern = "conversation:{conversationKey}",
+            conversationGroupPattern = "conversation:{conversationId}",
             clientEvents = new[]
             {
                 RealtimeClientMethods.ConnectionReady,

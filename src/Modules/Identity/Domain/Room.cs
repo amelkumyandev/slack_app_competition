@@ -4,6 +4,8 @@ public sealed class Room
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
+    public Guid ConversationId { get; set; }
+
     public string Name { get; set; } = string.Empty;
 
     public string NormalizedName { get; set; } = string.Empty;

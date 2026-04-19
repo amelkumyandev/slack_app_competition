@@ -30,4 +30,5 @@ Each conversation has a monotonically increasing **watermark**. Every persisted 
 
 - use `GET /api/conversations/{conversationId}/sync?afterWatermark={n}`
 - use `GET /api/conversations/{conversationId}/messages?beforeWatermark={n}&pageSize={k}`
+- include `conversationId` and `watermark` in realtime envelopes for conversation-scoped events
 - test forced missed-event scenarios explicitly

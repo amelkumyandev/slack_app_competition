@@ -1,5 +1,6 @@
 using SlackApp.Modules.Contacts.Extensions;
 using SlackApp.Modules.Identity.Extensions;
+using SlackApp.Modules.Messaging.Extensions;
 using SlackApp.Modules.Presence.Extensions;
 using SlackApp.Modules.Rooms.Extensions;
 using SlackApp.Modules.Sessions.Extensions;
@@ -24,6 +25,7 @@ builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddSessionsModule();
 builder.Services.AddContactsModule();
 builder.Services.AddPresenceModule(builder.Configuration);
+builder.Services.AddMessagingModule();
 builder.Services.AddRoomsModule();
 
 var app = builder.Build();
@@ -55,10 +57,10 @@ var modules = new[]
 app.MapGet("/", () => Results.Ok(new
 {
     application = "Slack App Competition API",
-    status = "presence-heartbeats-ready",
+    status = "watermark-sync-ready",
     architecture = "modular-monolith",
     auth = "cookie-session",
-    realtime = "signalr-presence",
+    realtime = "signalr-watermarks",
     modules
 }));
 
@@ -82,6 +84,7 @@ app.MapIdentityModule();
 app.MapSessionsModule();
 app.MapContactsModule();
 app.MapPresenceModule();
+app.MapMessagingModule();
 app.MapRoomsModule();
 
 app.Run();

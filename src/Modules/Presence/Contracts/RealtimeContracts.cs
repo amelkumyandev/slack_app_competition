@@ -22,6 +22,8 @@ public sealed record RealtimeEnvelope(
     string EventType,
     string Scope,
     string Target,
+    Guid? ConversationId,
+    long? Watermark,
     DateTimeOffset ServerTimeUtc,
     JsonElement Payload);
 
@@ -50,6 +52,11 @@ public static class RealtimeGroups
     public static string RoomConversation(Guid roomId)
     {
         return $"room:{roomId:D}";
+    }
+
+    public static string ConversationId(Guid conversationId)
+    {
+        return $"conversation:{conversationId:D}";
     }
 
     public static string Conversation(string conversationKey)

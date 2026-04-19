@@ -2,6 +2,7 @@ namespace SlackApp.Modules.Rooms.Contracts;
 
 public sealed record RoomListItemResponse(
     Guid Id,
+    Guid ConversationId,
     string Name,
     string? Description,
     bool IsPrivate,

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SlackApp.Modules.Identity.Contracts;
 using SlackApp.Modules.Identity.Domain;
 using SlackApp.Modules.Identity.Infrastructure;
+using SlackApp.Modules.Messaging.Services;
 using SlackApp.Modules.Presence.Contracts;
 using SlackApp.Modules.Presence.Services;
 using SlackApp.Modules.Rooms.Contracts;
@@ -13,6 +14,7 @@ namespace SlackApp.Modules.Rooms.Services;
 public sealed partial class RoomManagementService(
     IdentityDbContext dbContext,
     TimeProvider timeProvider,
+    ConversationService conversationService,
     IRealtimeNotifier realtimeNotifier)
 {
     public async Task<RoomServiceResult<RoomDirectoryResponse>> GetDirectoryAsync(
@@ -244,7 +246,17 @@ public sealed partial class RoomManagementService(
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
+        var conversation = new Conversation
+        {
+            Kind = "room",
+            RoomId = room.Id,
+            CurrentWatermark = 0,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+        room.ConversationId = conversation.Id;
 
+        dbContext.Conversations.Add(conversation);
         dbContext.Rooms.Add(room);
         dbContext.RoomMembers.Add(new RoomMember
         {
@@ -254,11 +266,25 @@ public sealed partial class RoomManagementService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await conversationService.AppendRoomActivityAsync(
+            room.ConversationId,
+            room.Id,
+            "room.created",
+            ownerUserId,
+            new
+            {
+                roomId = room.Id,
+                conversationId = room.ConversationId,
+                roomName = room.Name,
+                isPrivate = room.Visibility == RoomVisibility.Private
+            },
+            cancellationToken);
         await realtimeNotifier.NotifyUsersAsync(
             "room.created",
             new
             {
                 roomId = room.Id,
+                conversationId = room.ConversationId,
                 roomName = room.Name,
                 isPrivate = room.Visibility == RoomVisibility.Private
             },
@@ -267,6 +293,7 @@ public sealed partial class RoomManagementService(
 
         return RoomServiceResult<RoomListItemResponse>.Success(new RoomListItemResponse(
             room.Id,
+            room.ConversationId,
             room.Name,
             room.Description,
             room.Visibility == RoomVisibility.Private,
@@ -320,12 +347,15 @@ public sealed partial class RoomManagementService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        await realtimeNotifier.NotifyConversationAsync(
+        await conversationService.AppendRoomActivityAsync(
+            aggregate.Room.ConversationId,
+            roomId,
             "room.member.joined",
-            RealtimeGroups.RoomConversation(roomId),
+            userId,
             new
             {
                 roomId,
+                conversationId = aggregate.Room.ConversationId,
                 userId
             },
             cancellationToken);
@@ -454,11 +484,25 @@ public sealed partial class RoomManagementService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await conversationService.AppendRoomActivityAsync(
+            aggregate.Room.ConversationId,
+            roomId,
+            "room.invitation.created",
+            actorUserId,
+            new
+            {
+                roomId,
+                conversationId = aggregate.Room.ConversationId,
+                invitedUserId = targetUser.Value.Id,
+                invitedByUserId = actorUserId
+            },
+            cancellationToken);
         await realtimeNotifier.NotifyUsersAsync(
             "room.invitation.created",
             new
             {
                 roomId,
+                conversationId = aggregate.Room.ConversationId,
                 invitedUserId = targetUser.Value.Id,
                 invitedByUserId = actorUserId
             },
@@ -516,12 +560,15 @@ public sealed partial class RoomManagementService(
         invitation.Status = RoomInvitationStatus.Accepted;
         invitation.RespondedAtUtc = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken);
-        await realtimeNotifier.NotifyConversationAsync(
+        await conversationService.AppendRoomActivityAsync(
+            aggregate.Room.ConversationId,
+            invitation.RoomId,
             "room.member.joined",
-            RealtimeGroups.RoomConversation(invitation.RoomId),
+            userId,
             new
             {
                 roomId = invitation.RoomId,
+                conversationId = aggregate.Room.ConversationId,
                 userId
             },
             cancellationToken);
@@ -530,6 +577,7 @@ public sealed partial class RoomManagementService(
             new
             {
                 roomId = invitation.RoomId,
+                conversationId = aggregate.Room.ConversationId,
                 invitedUserId = userId,
                 invitedByUserId = invitation.InvitedByUserId
             },
@@ -626,12 +674,15 @@ public sealed partial class RoomManagementService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        await realtimeNotifier.NotifyConversationAsync(
+        await conversationService.AppendRoomActivityAsync(
+            aggregate.Room.ConversationId,
+            roomId,
             "room.admin.granted",
-            RealtimeGroups.RoomConversation(roomId),
+            actorUserId,
             new
             {
                 roomId,
+                conversationId = aggregate.Room.ConversationId,
                 userId = targetUser.Value.Id,
                 grantedByUserId = actorUserId
             },
@@ -788,12 +839,15 @@ public sealed partial class RoomManagementService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        await realtimeNotifier.NotifyConversationAsync(
+        await conversationService.AppendRoomActivityAsync(
+            aggregate.Room.ConversationId,
+            roomId,
             "room.member.removed",
-            RealtimeGroups.RoomConversation(roomId),
+            actorUserId,
             new
             {
                 roomId,
+                conversationId = aggregate.Room.ConversationId,
                 userId = targetUser.Value.Id,
                 removedByUserId = actorUserId
             },
@@ -803,6 +857,7 @@ public sealed partial class RoomManagementService(
             new
             {
                 roomId,
+                conversationId = aggregate.Room.ConversationId,
                 userId = targetUser.Value.Id,
                 removedByUserId = actorUserId
             },
@@ -930,6 +985,7 @@ public sealed partial class RoomManagementService(
 
         return new RoomListItemResponse(
             room.Id,
+            room.ConversationId,
             room.Name,
             room.Description,
             room.Visibility == RoomVisibility.Private,

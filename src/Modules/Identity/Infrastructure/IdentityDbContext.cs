@@ -19,6 +19,10 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<Room> Rooms => Set<Room>();
 
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+
+    public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
+
     public DbSet<RoomMember> RoomMembers => Set<RoomMember>();
 
     public DbSet<RoomAdmin> RoomAdmins => Set<RoomAdmin>();
@@ -106,6 +110,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         var rooms = modelBuilder.Entity<Room>();
         rooms.ToTable("rooms");
         rooms.HasKey(room => room.Id);
+        rooms.Property(room => room.ConversationId).IsRequired();
         rooms.Property(room => room.Name).HasMaxLength(64).IsRequired();
         rooms.Property(room => room.NormalizedName).HasMaxLength(64).IsRequired();
         rooms.Property(room => room.Description).HasMaxLength(512);
@@ -114,7 +119,33 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .HasForeignKey(room => room.OwnerUserId)
             .OnDelete(DeleteBehavior.Cascade);
         rooms.HasIndex(room => room.NormalizedName).IsUnique();
+        rooms.HasIndex(room => room.ConversationId).IsUnique();
         rooms.HasIndex(room => room.Visibility);
+
+        var conversations = modelBuilder.Entity<Conversation>();
+        conversations.ToTable("conversations");
+        conversations.HasKey(conversation => conversation.Id);
+        conversations.Property(conversation => conversation.Kind).HasMaxLength(32).IsRequired();
+        conversations.HasOne<Room>()
+            .WithMany()
+            .HasForeignKey(conversation => conversation.RoomId)
+            .OnDelete(DeleteBehavior.Cascade);
+        conversations.HasIndex(conversation => conversation.RoomId).IsUnique();
+
+        var conversationMessages = modelBuilder.Entity<ConversationMessage>();
+        conversationMessages.ToTable("conversation_messages");
+        conversationMessages.HasKey(message => message.Id);
+        conversationMessages.Property(message => message.EventType).HasMaxLength(128).IsRequired();
+        conversationMessages.Property(message => message.PayloadJson).HasColumnType("TEXT").IsRequired();
+        conversationMessages.HasOne<Conversation>()
+            .WithMany()
+            .HasForeignKey(message => message.ConversationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        conversationMessages.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(message => message.ActorUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+        conversationMessages.HasIndex(message => new { message.ConversationId, message.Watermark }).IsUnique();
 
         var roomMembers = modelBuilder.Entity<RoomMember>();
         roomMembers.ToTable("room_members");
