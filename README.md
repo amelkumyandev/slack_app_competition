@@ -9,6 +9,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/auth-and-account-core` adds cookie-backed registration, login, password management, and current-session logout foundations.
 - `feat/session-management-screen` adds the persisted sessions API, selective revoke flow, and the first interactive web workspace at `/sessions`.
 - `feat/friends-and-user-ban` adds the contacts/social-graph API for friend requests, friendship removal, user bans, and direct-message authorization checks.
+- `feat/rooms-membership-and-moderation` adds backend room creation, public catalog search, public joins, private invitations, admin assignment, and remove-member-as-ban moderation flows.
 - Business features are intentionally not implemented yet.
 
 ## Planned Stack
@@ -152,6 +153,33 @@ This branch is backend-first. It establishes:
 - user-to-user bans
 - direct-message policy checks that allow PMs only for confirmed friends and freeze them after a ban
 
+## Current Rooms API
+
+The rooms slice now exposes:
+
+- `GET /api/rooms`
+- `GET /api/rooms/{roomId}`
+- `POST /api/rooms`
+- `POST /api/rooms/{roomId}/join`
+- `POST /api/rooms/{roomId}/leave`
+- `POST /api/rooms/{roomId}/invitations`
+- `POST /api/rooms/invitations/{invitationId}/accept`
+- `POST /api/rooms/invitations/{invitationId}/decline`
+- `POST /api/rooms/{roomId}/admins`
+- `POST /api/rooms/{roomId}/admins/remove`
+- `POST /api/rooms/{roomId}/members/remove`
+- `POST /api/rooms/{roomId}/bans/remove`
+
+This branch is backend-first. It establishes:
+
+- unique room names
+- searchable public room catalog
+- public-room join behavior
+- private-room invitation and acceptance flow
+- owner-only admin management
+- remove-member behavior that also applies a room ban
+- rejoin prevention until explicit unban
+
 ## Environment Contract
 
 Copy `.env.example` to `.env` if you want to override the defaults. The Compose file is written with safe fallbacks, so the stack can still start without a local `.env` file.
@@ -207,6 +235,7 @@ Recommended early merge order:
 4. `feat/session-management-screen`
 5. `feat/friends-and-user-ban`
 6. `feat/rooms-membership-and-moderation`
+7. `feat/realtime-signalr-foundation`
 
 ## Notes
 

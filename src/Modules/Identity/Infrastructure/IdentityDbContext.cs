@@ -17,6 +17,16 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<UserBan> UserBans => Set<UserBan>();
 
+    public DbSet<Room> Rooms => Set<Room>();
+
+    public DbSet<RoomMember> RoomMembers => Set<RoomMember>();
+
+    public DbSet<RoomAdmin> RoomAdmins => Set<RoomAdmin>();
+
+    public DbSet<RoomInvitation> RoomInvitations => Set<RoomInvitation>();
+
+    public DbSet<RoomBan> RoomBans => Set<RoomBan>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var userAccounts = modelBuilder.Entity<UserAccount>();
@@ -92,5 +102,85 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .HasForeignKey(userBan => userBan.TargetUserId)
             .OnDelete(DeleteBehavior.Cascade);
         userBans.HasIndex(userBan => new { userBan.SourceUserId, userBan.TargetUserId }).IsUnique();
+
+        var rooms = modelBuilder.Entity<Room>();
+        rooms.ToTable("rooms");
+        rooms.HasKey(room => room.Id);
+        rooms.Property(room => room.Name).HasMaxLength(64).IsRequired();
+        rooms.Property(room => room.NormalizedName).HasMaxLength(64).IsRequired();
+        rooms.Property(room => room.Description).HasMaxLength(512);
+        rooms.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(room => room.OwnerUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        rooms.HasIndex(room => room.NormalizedName).IsUnique();
+        rooms.HasIndex(room => room.Visibility);
+
+        var roomMembers = modelBuilder.Entity<RoomMember>();
+        roomMembers.ToTable("room_members");
+        roomMembers.HasKey(roomMember => roomMember.Id);
+        roomMembers.HasOne<Room>()
+            .WithMany()
+            .HasForeignKey(roomMember => roomMember.RoomId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomMembers.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(roomMember => roomMember.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomMembers.HasIndex(roomMember => new { roomMember.RoomId, roomMember.UserId }).IsUnique();
+        roomMembers.HasIndex(roomMember => roomMember.UserId);
+
+        var roomAdmins = modelBuilder.Entity<RoomAdmin>();
+        roomAdmins.ToTable("room_admins");
+        roomAdmins.HasKey(roomAdmin => roomAdmin.Id);
+        roomAdmins.HasOne<Room>()
+            .WithMany()
+            .HasForeignKey(roomAdmin => roomAdmin.RoomId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomAdmins.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(roomAdmin => roomAdmin.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomAdmins.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(roomAdmin => roomAdmin.GrantedByUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomAdmins.HasIndex(roomAdmin => new { roomAdmin.RoomId, roomAdmin.UserId }).IsUnique();
+
+        var roomInvitations = modelBuilder.Entity<RoomInvitation>();
+        roomInvitations.ToTable("room_invitations");
+        roomInvitations.HasKey(roomInvitation => roomInvitation.Id);
+        roomInvitations.HasOne<Room>()
+            .WithMany()
+            .HasForeignKey(roomInvitation => roomInvitation.RoomId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomInvitations.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(roomInvitation => roomInvitation.InvitedUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomInvitations.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(roomInvitation => roomInvitation.InvitedByUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomInvitations.HasIndex(roomInvitation => new { roomInvitation.RoomId, roomInvitation.InvitedUserId, roomInvitation.Status });
+        roomInvitations.HasIndex(roomInvitation => new { roomInvitation.InvitedUserId, roomInvitation.Status });
+
+        var roomBans = modelBuilder.Entity<RoomBan>();
+        roomBans.ToTable("room_bans");
+        roomBans.HasKey(roomBan => roomBan.Id);
+        roomBans.Property(roomBan => roomBan.Reason).HasMaxLength(512);
+        roomBans.HasOne<Room>()
+            .WithMany()
+            .HasForeignKey(roomBan => roomBan.RoomId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomBans.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(roomBan => roomBan.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomBans.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(roomBan => roomBan.BannedByUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        roomBans.HasIndex(roomBan => new { roomBan.RoomId, roomBan.UserId }).IsUnique();
     }
 }
