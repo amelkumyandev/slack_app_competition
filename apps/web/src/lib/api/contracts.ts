@@ -136,10 +136,70 @@ export type RoomInvitationResponse = {
   respondedAtUtc: string | null;
 };
 
+export type RoomMemberResponse = {
+  userId: string;
+  userName: string;
+  joinedAtUtc: string;
+  isOwner: boolean;
+  isAdmin: boolean;
+};
+
+export type RoomAdminResponse = {
+  userId: string;
+  userName: string;
+  grantedAtUtc: string;
+  isOwner: boolean;
+};
+
+export type RoomBanResponse = {
+  userId: string;
+  userName: string;
+  bannedByUserId: string;
+  bannedByUserName: string;
+  reason: string | null;
+  createdAtUtc: string;
+};
+
+export type RoomPermissionsResponse = {
+  canJoin: boolean;
+  canInvite: boolean;
+  canManageAdmins: boolean;
+  canRemoveMembers: boolean;
+  canUnbanMembers: boolean;
+  canLeave: boolean;
+  isBanned: boolean;
+};
+
 export type RoomDirectoryResponse = {
   myRooms: RoomListItemResponse[];
   publicCatalog: RoomListItemResponse[];
   pendingInvitations: RoomInvitationResponse[];
+};
+
+export type RoomDetailsResponse = {
+  room: RoomListItemResponse;
+  members: RoomMemberResponse[];
+  admins: RoomAdminResponse[];
+  pendingInvitations: RoomInvitationResponse[];
+  bans: RoomBanResponse[];
+  permissions: RoomPermissionsResponse;
+};
+
+export type InviteToRoomRequest = {
+  targetUserName: string;
+};
+
+export type UpdateRoomAdminRequest = {
+  targetUserName: string;
+};
+
+export type RemoveRoomMemberRequest = {
+  targetUserName: string;
+  reason?: string | null;
+};
+
+export type RemoveRoomBanRequest = {
+  targetUserName: string;
 };
 
 export type FriendshipContactResponse = {

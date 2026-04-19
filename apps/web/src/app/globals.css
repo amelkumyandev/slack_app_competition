@@ -1006,7 +1006,8 @@ a {
   font-weight: 600;
 }
 
-.field input {
+.field input,
+.field textarea {
   width: 100%;
   padding: 0.85rem 0.95rem;
   border: 1px solid rgba(18, 32, 51, 0.14);
@@ -1016,7 +1017,13 @@ a {
   font: inherit;
 }
 
-.field input:focus-visible {
+.field textarea {
+  resize: vertical;
+  min-height: 108px;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible {
   outline: 2px solid rgba(13, 140, 125, 0.28);
   outline-offset: 2px;
 }
@@ -1166,6 +1173,10 @@ a {
   gap: 0.45rem;
 }
 
+.compact-button {
+  padding: 0.6rem 0.85rem;
+}
+
 .chip,
 .counter-pill {
   display: inline-flex;
@@ -1243,6 +1254,101 @@ a {
   line-height: 1.7;
 }
 
+.compact-details {
+  margin-top: 1rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(12, 18, 30, 0.52);
+  backdrop-filter: blur(10px);
+}
+
+.room-modal {
+  width: min(1080px, 100%);
+  max-height: min(88vh, 980px);
+  overflow: auto;
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 246, 240, 0.94));
+  border: 1px solid rgba(18, 32, 51, 0.1);
+  box-shadow: 0 28px 80px rgba(12, 18, 30, 0.26);
+}
+
+.room-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.room-modal-header h2 {
+  margin: 0.35rem 0 0;
+  letter-spacing: -0.03em;
+}
+
+.room-modal-toolbar {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.room-search-field {
+  max-width: 320px;
+}
+
+.room-modal-content,
+.room-tab-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.room-tab-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+}
+
+.room-tab-card {
+  padding: 1rem;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(18, 32, 51, 0.08);
+}
+
+.room-entity-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.room-entity-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: rgba(248, 246, 240, 0.78);
+  border: 1px solid rgba(18, 32, 51, 0.08);
+}
+
+.room-entity-card span {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.room-action-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
 .panel-skeleton {
   display: grid;
   gap: 0.9rem;
@@ -1294,6 +1400,7 @@ a {
   .presence-grid,
   .sessions-grid,
   .chat-layout,
+  .room-tab-grid,
   .status-strip,
   .presence-summary,
   .presence-details,
@@ -1326,6 +1433,7 @@ a {
   .presence-hero,
   .sessions-hero,
   .chat-hero,
+  .room-modal-header,
   .panel-header,
   .session-card-header,
   .chat-main-header {
@@ -1340,6 +1448,14 @@ a {
   }
 
   .presence-feed-item {
+    flex-direction: column;
+  }
+
+  .room-search-field {
+    max-width: none;
+  }
+
+  .room-entity-card {
     flex-direction: column;
   }
 

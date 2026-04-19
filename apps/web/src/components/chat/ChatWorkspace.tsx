@@ -21,6 +21,7 @@ import {
   type RoomListItemResponse,
 } from "@/lib/api/contracts";
 import { ApiClientError, apiBaseUrl, apiRequest, signalrUrl } from "@/lib/api/client";
+import { RoomManagementModal } from "@/components/chat/RoomManagementModal";
 
 type WorkspaceStatus = "loading" | "ready" | "auth" | "error";
 type RealtimeStatus = "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
@@ -91,6 +92,7 @@ export function ChatWorkspace() {
   const [downloadTargetId, setDownloadTargetId] = useState<string | null>(null);
   const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null);
   const [openingDirectUserName, setOpeningDirectUserName] = useState<string | null>(null);
+  const [roomManagerOpen, setRoomManagerOpen] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollViewportHeight, setScrollViewportHeight] = useState(720);
 
@@ -283,6 +285,12 @@ export function ChatWorkspace() {
     // Summary and unread updates may replace the selection object without switching conversations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (selectedConversation?.kind !== "room") {
+      setRoomManagerOpen(false);
+    }
+  }, [selectedConversation]);
 
   useEffect(() => {
     if (!shouldScrollToBottomRef.current) {
@@ -760,6 +768,7 @@ export function ChatWorkspace() {
   const totalConversationUnread =
     (roomDirectory?.myRooms.reduce((count, room) => count + room.unreadCount, 0) ?? 0) +
     directList.reduce((count, conversation) => count + conversation.unreadCount, 0);
+  const activeRoom = selectedConversation?.kind === "room" ? selectedConversation.room : null;
   const selectedConversationLabel = selectedConversation
     ? selectedConversation.kind === "room"
       ? `# ${selectedConversation.title}`
@@ -771,13 +780,13 @@ export function ChatWorkspace() {
       <div className="chat-shell">
         <section className="chat-hero">
           <div>
-            <span className="eyebrow">F12 Unread Navigation</span>
-            <h1>Unread-aware chat navigation with durable read watermarks and live conversation summaries.</h1>
+            <span className="eyebrow">F14 Room Management UI</span>
+            <h1>Room admin workflows now live inside the shared chat shell.</h1>
             <p>
               This workspace sits directly on top of the conversation watermark foundation. REST
-              handles durable history, read-state updates, and pagination, SignalR carries live
-              conversation events, and the client keeps room and direct summaries fresh while
-              clearing unread counts as conversations are opened.
+              handles durable history, read-state updates, and room moderation commands, while the
+              new room manager modal makes invites, admin control, bans, and destructive actions
+              discoverable without leaving the chat screen.
             </p>
           </div>
 
@@ -1301,12 +1310,41 @@ export function ChatWorkspace() {
 
             <aside className="chat-detail">
               <div className="chat-sidebar-card">
-                <span className="panel-kicker">Conversation details</span>
-                <h2>{selectedConversation?.title ?? "Waiting for selection"}</h2>
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-kicker">Conversation details</span>
+                    <h2>{selectedConversation?.title ?? "Waiting for selection"}</h2>
+                  </div>
+                  {activeRoom ? (
+                    <button className="secondary-button" onClick={() => setRoomManagerOpen(true)} type="button">
+                      Manage room
+                    </button>
+                  ) : null}
+                </div>
                 <p className="panel-copy">
                   {selectedConversation?.subtitle ??
                     "Room membership and direct-message policy still live on the backend; this panel just surfaces the current slice of that state."}
                 </p>
+                {activeRoom ? (
+                  <div className="presence-details compact-details">
+                    <div>
+                      <dt>Visibility</dt>
+                      <dd>{activeRoom.isPrivate ? "Private" : "Public"}</dd>
+                    </div>
+                    <div>
+                      <dt>Members</dt>
+                      <dd>{activeRoom.memberCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Unread</dt>
+                      <dd>{activeRoom.unreadCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Your role</dt>
+                      <dd>{activeRoom.isOwner ? "Owner" : activeRoom.isAdmin ? "Admin" : "Member"}</dd>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="chat-sidebar-card">
@@ -1382,6 +1420,16 @@ export function ChatWorkspace() {
               </button>
             </article>
           </section>
+        ) : null}
+
+        {activeRoom ? (
+          <RoomManagementModal
+            currentUserName={currentUser?.userName ?? null}
+            isOpen={roomManagerOpen}
+            onClose={() => setRoomManagerOpen(false)}
+            onWorkspaceRefresh={refreshNavigationData}
+            room={activeRoom}
+          />
         ) : null}
       </div>
     </main>

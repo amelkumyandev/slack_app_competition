@@ -17,6 +17,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/attachments-and-secure-downloads` adds filesystem-backed uploads, secure attachment downloads, room-delete cleanup, and chat composer support for file sharing with optional comments.
 - `feat/unread-and-chat-navigation` adds per-user conversation read watermarks, unread counters for rooms and directs, and live chat navigation pills that clear as conversations are opened.
 - `feat/slack-like-shell-and-core-screens` adds a shared app shell, a dedicated `/auth` route, and cohesive route framing across auth, chat, sessions, and presence.
+- `feat/admin-modals-and-room-management-ui` adds a keyboard-friendly room management modal in `/chat` with member search, admin controls, ban review, invitation actions, and destructive room confirmations.
 
 ## Planned Stack
 
@@ -253,6 +254,7 @@ The web app now includes a focused `/chat` route that can:
 - download attachments from message history
 - edit or delete messages when policy allows
 - reconnect SignalR, detect watermark gaps, and trigger REST sync repair
+- open a room-management modal with member filtering, admin actions, ban review, invitation sending, room leave, and room delete flows
 
 Current attachment guarantees:
 
