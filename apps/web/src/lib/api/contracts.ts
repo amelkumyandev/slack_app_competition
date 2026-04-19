@@ -83,6 +83,8 @@ export type RealtimeEnvelope = {
   eventType: string;
   scope: string;
   target: string;
+  conversationId?: string | null;
+  watermark?: number | null;
   serverTimeUtc: string;
   payload: unknown;
 };
@@ -101,4 +103,140 @@ export type RealtimeContractResponse = {
     heartbeatTtlSeconds: number;
     afkThresholdSeconds: number;
   };
+};
+
+export type RoomListItemResponse = {
+  id: string;
+  conversationId: string;
+  name: string;
+  description: string | null;
+  isPrivate: boolean;
+  isOwner: boolean;
+  isAdmin: boolean;
+  isMember: boolean;
+  memberCount: number;
+  isBanned: boolean;
+};
+
+export type RoomInvitationResponse = {
+  id: string;
+  roomId: string;
+  roomName: string;
+  invitedUserId: string;
+  invitedUserName: string;
+  invitedByUserId: string;
+  invitedByUserName: string;
+  status: string;
+  createdAtUtc: string;
+  respondedAtUtc: string | null;
+};
+
+export type RoomDirectoryResponse = {
+  myRooms: RoomListItemResponse[];
+  publicCatalog: RoomListItemResponse[];
+  pendingInvitations: RoomInvitationResponse[];
+};
+
+export type FriendshipContactResponse = {
+  userId: string;
+  userName: string;
+  createdAtUtc: string;
+};
+
+export type FriendRequestContactResponse = {
+  id: string;
+  requesterUserId: string;
+  requesterUserName: string;
+  addresseeUserId: string;
+  addresseeUserName: string;
+  status: string;
+  sourceRoomId: string | null;
+  requestedAtUtc: string;
+  respondedAtUtc: string | null;
+};
+
+export type UserBanContactResponse = {
+  userId: string;
+  userName: string;
+  reason: string | null;
+  createdAtUtc: string;
+};
+
+export type ContactSummaryResponse = {
+  friends: FriendshipContactResponse[];
+  incomingFriendRequests: FriendRequestContactResponse[];
+  outgoingFriendRequests: FriendRequestContactResponse[];
+  bansIssued: UserBanContactResponse[];
+  bansReceived: UserBanContactResponse[];
+};
+
+export type ReplyPreviewResponse = {
+  messageId: string;
+  authorUserId: string;
+  authorUserName: string;
+  text: string | null;
+  isDeleted: boolean;
+};
+
+export type ChatMessageResponse = {
+  messageId: string;
+  conversationId: string;
+  createdWatermark: number;
+  latestWatermark: number;
+  authorUserId: string;
+  authorUserName: string;
+  text: string | null;
+  replyToMessageId: string | null;
+  replyPreview: ReplyPreviewResponse | null;
+  createdAtUtc: string;
+  editedAtUtc: string | null;
+  deletedAtUtc: string | null;
+  isEdited: boolean;
+  isDeleted: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
+export type ConversationTimelineResponse = {
+  conversationId: string;
+  latestWatermark: number;
+  pageSize: number;
+  nextCursor: number | null;
+  messages: ChatMessageResponse[];
+};
+
+export type ConversationEventResponse = {
+  id: string;
+  conversationId: string;
+  watermark: number;
+  eventType: string;
+  actorUserId: string | null;
+  messageId: string | null;
+  replyToMessageId: string | null;
+  textContent: string | null;
+  payload: unknown;
+  createdAtUtc: string;
+};
+
+export type ConversationSyncResponse = {
+  conversationId: string;
+  afterWatermark: number;
+  latestWatermark: number;
+  requiresFullRefresh: boolean;
+  missingMessages: ConversationEventResponse[];
+};
+
+export type DirectConversationSummaryResponse = {
+  conversationId: string;
+  targetUserId: string;
+  targetUserName: string;
+  accessMode: "read_only" | "read_write" | "none";
+  latestWatermark: number;
+  messageCount: number;
+  lastMessagePreview: string | null;
+  lastMessageAtUtc: string | null;
+};
+
+export type DirectConversationListResponse = {
+  conversations: DirectConversationSummaryResponse[];
 };

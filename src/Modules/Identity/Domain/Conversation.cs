@@ -8,6 +8,10 @@ public sealed class Conversation
 
     public Guid? RoomId { get; set; }
 
+    public Guid? DirectFirstUserId { get; set; }
+
+    public Guid? DirectSecondUserId { get; set; }
+
     public long CurrentWatermark { get; set; }
 
     public DateTimeOffset CreatedAtUtc { get; set; }

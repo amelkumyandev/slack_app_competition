@@ -130,12 +130,22 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .WithMany()
             .HasForeignKey(conversation => conversation.RoomId)
             .OnDelete(DeleteBehavior.Cascade);
+        conversations.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(conversation => conversation.DirectFirstUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        conversations.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(conversation => conversation.DirectSecondUserId)
+            .OnDelete(DeleteBehavior.Cascade);
         conversations.HasIndex(conversation => conversation.RoomId).IsUnique();
+        conversations.HasIndex(conversation => new { conversation.DirectFirstUserId, conversation.DirectSecondUserId }).IsUnique();
 
         var conversationMessages = modelBuilder.Entity<ConversationMessage>();
         conversationMessages.ToTable("conversation_messages");
         conversationMessages.HasKey(message => message.Id);
         conversationMessages.Property(message => message.EventType).HasMaxLength(128).IsRequired();
+        conversationMessages.Property(message => message.TextContent).HasColumnType("TEXT");
         conversationMessages.Property(message => message.PayloadJson).HasColumnType("TEXT").IsRequired();
         conversationMessages.HasOne<Conversation>()
             .WithMany()
@@ -145,6 +155,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .WithMany()
             .HasForeignKey(message => message.ActorUserId)
             .OnDelete(DeleteBehavior.SetNull);
+        conversationMessages.HasIndex(message => new { message.ConversationId, message.MessageId });
         conversationMessages.HasIndex(message => new { message.ConversationId, message.Watermark }).IsUnique();
 
         var roomMembers = modelBuilder.Entity<RoomMember>();

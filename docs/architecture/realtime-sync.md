@@ -139,7 +139,13 @@ Older history should be fetched by watermark window, for example:
 GET /api/conversations/{conversationId}/messages?beforeWatermark={N}&pageSize=50
 ```
 
-The server returns messages in stable chronological order for rendering.
+The current implementation returns **materialized chat messages** in stable chronological order for rendering. Sync repair still uses the event stream endpoint:
+
+```text
+GET /api/conversations/{conversationId}/sync?afterWatermark={N}
+```
+
+That split keeps the UI simple for replies, edits, and deletes while preserving watermark-aware repair.
 
 ## 7. No queue rule
 

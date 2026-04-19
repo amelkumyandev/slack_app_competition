@@ -13,7 +13,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/realtime-signalr-foundation` adds the authenticated SignalR hub, user and conversation groups, and realtime event routing for room/contact hints.
 - `feat/presence-heartbeats-and-hibernation` adds per-tab presence heartbeats, aggregate online/AFK/offline inference, Redis-backed Docker storage with in-memory test fallback, and a live `/presence` workspace.
 - `feat/conversation-watermarks-and-gap-recovery` adds durable room-backed conversations, monotonic watermarks, conversation history paging, and REST sync repair for missed realtime events.
-- Business features are intentionally not implemented yet.
+- `feat/messaging-core-and-history` adds durable room and direct messages, multiline text, replies, edit/delete flows, room-admin delete permissions, direct-message read-only freeze after bans, and a live `/chat` workspace with windowed history rendering.
 
 ## Planned Stack
 
@@ -211,19 +211,35 @@ Current foundation guarantees:
 - conversation events now carry `conversationId` and `watermark`
 - reconnect strategy remains REST-based for gap repair rather than per-user queues
 
-## Current Conversation Sync API
+## Current Messaging API
 
-The watermark slice now exposes:
+The messaging slice now exposes:
 
 - `GET /api/conversations/{conversationId}/messages?beforeWatermark={n}&pageSize={k}`
 - `GET /api/conversations/{conversationId}/sync?afterWatermark={n}`
+- `POST /api/conversations/{conversationId}/messages`
+- `POST /api/conversations/{conversationId}/messages/{messageId}/edit`
+- `DELETE /api/conversations/{conversationId}/messages/{messageId}`
+- `GET /api/conversations/direct`
+- `POST /api/conversations/direct`
 
 Current conversation guarantees:
 
-- each room owns a durable `conversationId`
-- room activity is persisted into `conversation_messages` with monotonic per-conversation watermarks
+- each room or direct dialog owns a durable `conversationId`
+- room and direct messages are persisted into `conversation_messages` with monotonic per-conversation watermarks
+- history pages return materialized chat messages in chronological order, including reply previews and edited/deleted state
+- direct conversations respect friendship and ban policy, including read-only history after a ban
 - missed realtime windows can be repaired through REST without any unbounded per-user queue
-- history paging is stable by watermark window, which sets up the long-history work in later branches
+- history paging is stable by message creation watermark, and the `/chat` workspace keeps the DOM bounded with windowed rendering for long histories
+
+The web app now includes a focused `/chat` route that can:
+
+- open room or direct conversations
+- start direct messages from confirmed friends
+- page older history progressively
+- send multiline messages with reply targets
+- edit or delete messages when policy allows
+- reconnect SignalR, detect watermark gaps, and trigger REST sync repair
 
 ## Current Presence Contract
 

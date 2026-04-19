@@ -101,29 +101,70 @@ public sealed class ConversationAccessService(IdentityDbContext dbContext)
         }
 
         var conversation = await dbContext.Conversations.SingleOrDefaultAsync(candidate => candidate.Id == resolution.ConversationId.Value, cancellationToken);
-        if (conversation?.RoomId is not { } roomId)
+        if (conversation is null)
         {
             return new ConversationAccessDecision(false, "conversation_not_found", "That conversation could not be found.", resolution.NormalizedConversationKey, resolution.GroupName);
         }
 
-        var room = await dbContext.Rooms.SingleOrDefaultAsync(candidate => candidate.Id == roomId, cancellationToken);
-        if (room is null)
+        if (conversation.RoomId is { } roomId)
         {
-            return new ConversationAccessDecision(false, "conversation_not_found", "That room conversation could not be found.", resolution.NormalizedConversationKey, resolution.GroupName);
-        }
+            var room = await dbContext.Rooms.SingleOrDefaultAsync(candidate => candidate.Id == roomId, cancellationToken);
+            if (room is null)
+            {
+                return new ConversationAccessDecision(false, "conversation_not_found", "That room conversation could not be found.", resolution.NormalizedConversationKey, resolution.GroupName);
+            }
 
-        if (room.OwnerUserId == userId)
-        {
+            if (room.OwnerUserId == userId)
+            {
+                return new ConversationAccessDecision(true, "allowed", "Subscription allowed.", resolution.NormalizedConversationKey, resolution.GroupName);
+            }
+
+            var isMember = await dbContext.RoomMembers.AnyAsync(candidate => candidate.RoomId == roomId && candidate.UserId == userId, cancellationToken);
+            if (!isMember)
+            {
+                return new ConversationAccessDecision(false, "conversation_access_denied", "Only room members can subscribe to that conversation.", resolution.NormalizedConversationKey, resolution.GroupName);
+            }
+
             return new ConversationAccessDecision(true, "allowed", "Subscription allowed.", resolution.NormalizedConversationKey, resolution.GroupName);
         }
 
-        var isMember = await dbContext.RoomMembers.AnyAsync(candidate => candidate.RoomId == roomId && candidate.UserId == userId, cancellationToken);
-        if (!isMember)
+        if (conversation.Kind == "direct" &&
+            conversation.DirectFirstUserId is { } firstUserId &&
+            conversation.DirectSecondUserId is { } secondUserId)
         {
-            return new ConversationAccessDecision(false, "conversation_access_denied", "Only room members can subscribe to that conversation.", resolution.NormalizedConversationKey, resolution.GroupName);
+            if (firstUserId != userId && secondUserId != userId)
+            {
+                return new ConversationAccessDecision(false, "conversation_access_denied", "Only direct-message participants can subscribe to that conversation.", resolution.NormalizedConversationKey, resolution.GroupName);
+            }
+
+            var otherUserId = firstUserId == userId ? secondUserId : firstUserId;
+            var hasBan = await dbContext.UserBans.AnyAsync(candidate =>
+                (candidate.SourceUserId == userId && candidate.TargetUserId == otherUserId) ||
+                (candidate.SourceUserId == otherUserId && candidate.TargetUserId == userId), cancellationToken);
+
+            if (hasBan)
+            {
+                return new ConversationAccessDecision(true, "allowed", "Subscription allowed in read-only mode.", resolution.NormalizedConversationKey, resolution.GroupName);
+            }
+
+            var (normalizedFirstUserId, normalizedSecondUserId) = NormalizePair(userId, otherUserId);
+            var friendshipExists = await dbContext.Friendships.AnyAsync(candidate =>
+                candidate.FirstUserId == normalizedFirstUserId &&
+                candidate.SecondUserId == normalizedSecondUserId, cancellationToken);
+
+            return friendshipExists
+                ? new ConversationAccessDecision(true, "allowed", "Subscription allowed.", resolution.NormalizedConversationKey, resolution.GroupName)
+                : new ConversationAccessDecision(false, "conversation_access_denied", "Direct messages require a confirmed friendship.", resolution.NormalizedConversationKey, resolution.GroupName);
         }
 
-        return new ConversationAccessDecision(true, "allowed", "Subscription allowed.", resolution.NormalizedConversationKey, resolution.GroupName);
+        return new ConversationAccessDecision(false, "conversation_access_denied", "That conversation type is not available yet.", resolution.NormalizedConversationKey, resolution.GroupName);
+    }
+
+    private static (Guid FirstUserId, Guid SecondUserId) NormalizePair(Guid firstUserId, Guid secondUserId)
+    {
+        return firstUserId.CompareTo(secondUserId) <= 0
+            ? (firstUserId, secondUserId)
+            : (secondUserId, firstUserId);
     }
 }
 

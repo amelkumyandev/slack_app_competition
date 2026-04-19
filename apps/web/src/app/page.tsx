@@ -18,7 +18,7 @@ const scaffoldingMilestones = [
   ["F02", "Docker Compose bootstrap"],
   ["F03", "Auth and account core"],
   ["F04", "Session management screen"],
-  ["F08", "Presence heartbeats and hibernation workspace"],
+  ["F10", "Messaging core, replies, edits, deletes, and history"],
 ] as const;
 
 export default function Home() {
@@ -33,17 +33,21 @@ export default function Home() {
               <p>
                 This branch lays down the repo structure for a Next.js frontend,
                 an ASP.NET Core API, shared backend modules, and the test lanes
-                we will fill in branch by branch. The first interactive screen is
-                now the session-management workspace.
+                we will fill in branch by branch. The newest interactive slice is
+                now the durable chat workspace, with sessions and presence still
+                available alongside it.
               </p>
               <div className="hero-actions">
-                <Link className="primary-link" href="/sessions">
+                <Link className="primary-link" href="/chat">
+                  Open chat workspace
+                </Link>
+                <Link className="secondary-button" href="/sessions">
                   Open sessions workspace
                 </Link>
                 <Link className="secondary-button" href="/presence">
                   Open presence workspace
                 </Link>
-                <div className="badge">Current slice: multi-tab presence with heartbeat inference</div>
+                <div className="badge">Current slice: durable messaging with realtime gap repair</div>
               </div>
             </div>
 

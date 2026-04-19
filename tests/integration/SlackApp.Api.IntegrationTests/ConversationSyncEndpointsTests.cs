@@ -44,29 +44,32 @@ public sealed class ConversationSyncEndpointsTests
         await RegisterAsync(ownerClient, "history-owner@example.com", "history-owner");
         await RegisterAsync(guestClient, "history-guest@example.com", "history-guest");
 
-        var room = await CreateRoomAsync(ownerClient, new CreateRoomRequest("History Vault", "History paging tests", true));
-        Assert.Equal(HttpStatusCode.OK, (await ownerClient.PostAsJsonAsync($"/api/rooms/{room.Id}/invitations", new InviteToRoomRequest("history-guest"))).StatusCode);
+        var room = await CreateRoomAsync(ownerClient, new CreateRoomRequest("History Vault", "History paging tests", false));
+        Assert.Equal(HttpStatusCode.OK, (await guestClient.PostAsync($"/api/rooms/{room.Id}/join", content: null)).StatusCode);
 
-        var guestDirectory = await GetDirectoryAsync(guestClient);
-        var invitation = Assert.Single(guestDirectory.PendingInvitations);
-        Assert.Equal(HttpStatusCode.OK, (await guestClient.PostAsync($"/api/rooms/invitations/{invitation.Id}/accept", content: null)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await ownerClient.PostAsJsonAsync($"/api/rooms/{room.Id}/admins", new UpdateRoomAdminRequest("history-guest"))).StatusCode);
+        var firstMessage = await PostMessageAsync(ownerClient, room.ConversationId, new PostMessageRequest("First room message"));
+        var secondMessage = await PostMessageAsync(ownerClient, room.ConversationId, new PostMessageRequest("Second room message"));
+        var thirdMessage = await PostMessageAsync(guestClient, room.ConversationId, new PostMessageRequest("Third room reply", firstMessage.MessageId));
 
         var latestPageResponse = await ownerClient.GetAsync($"/api/conversations/{room.ConversationId}/messages?pageSize=2");
         Assert.Equal(HttpStatusCode.OK, latestPageResponse.StatusCode);
 
-        var latestPage = await latestPageResponse.Content.ReadFromJsonAsync<ConversationHistoryResponse>();
+        var latestPage = await latestPageResponse.Content.ReadFromJsonAsync<ConversationTimelineResponse>();
         Assert.NotNull(latestPage);
-        Assert.Equal([3L, 4L], latestPage!.Messages.Select(message => message.Watermark).ToArray());
-        Assert.Equal(["room.member.joined", "room.admin.granted"], latestPage.Messages.Select(message => message.EventType).ToArray());
+        Assert.Equal([secondMessage.CreatedWatermark, thirdMessage.CreatedWatermark], latestPage!.Messages.Select(message => message.CreatedWatermark).ToArray());
+        Assert.Equal(["Second room message", "Third room reply"], latestPage.Messages.Select(message => message.Text).ToArray());
+        Assert.Equal(secondMessage.CreatedWatermark, latestPage.NextCursor);
+        Assert.Equal(firstMessage.MessageId, latestPage.Messages.Last().ReplyToMessageId);
+        Assert.NotNull(latestPage.Messages.Last().ReplyPreview);
 
-        var earlierPageResponse = await ownerClient.GetAsync($"/api/conversations/{room.ConversationId}/messages?beforeWatermark=3&pageSize=2");
+        var earlierPageResponse = await ownerClient.GetAsync($"/api/conversations/{room.ConversationId}/messages?beforeWatermark={latestPage.NextCursor}&pageSize=2");
         Assert.Equal(HttpStatusCode.OK, earlierPageResponse.StatusCode);
 
-        var earlierPage = await earlierPageResponse.Content.ReadFromJsonAsync<ConversationHistoryResponse>();
+        var earlierPage = await earlierPageResponse.Content.ReadFromJsonAsync<ConversationTimelineResponse>();
         Assert.NotNull(earlierPage);
-        Assert.Equal([1L, 2L], earlierPage!.Messages.Select(message => message.Watermark).ToArray());
-        Assert.Equal(["room.created", "room.invitation.created"], earlierPage.Messages.Select(message => message.EventType).ToArray());
+        Assert.Single(earlierPage!.Messages);
+        Assert.Equal(firstMessage.MessageId, earlierPage.Messages[0].MessageId);
+        Assert.Equal("First room message", earlierPage.Messages[0].Text);
     }
 
     [Fact]
@@ -121,6 +124,16 @@ public sealed class ConversationSyncEndpointsTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var payload = await response.Content.ReadFromJsonAsync<RoomDirectoryResponse>();
+        Assert.NotNull(payload);
+        return payload!;
+    }
+
+    private static async Task<ChatMessageResponse> PostMessageAsync(HttpClient client, Guid conversationId, PostMessageRequest request)
+    {
+        var response = await client.PostAsJsonAsync($"/api/conversations/{conversationId}/messages", request);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var payload = await response.Content.ReadFromJsonAsync<ChatMessageResponse>();
         Assert.NotNull(payload);
         return payload!;
     }
