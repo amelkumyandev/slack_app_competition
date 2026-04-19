@@ -17,6 +17,15 @@ The following must already work before advanced tests:
 - presence
 - long-history navigation
 
+Suggested command order:
+
+```bash
+docker compose up --build
+npm run qa:smoke
+npm run qa:load:history
+npm run qa:load:fanout
+```
+
 ## 2. Watermark integrity test
 
 ### Objective
@@ -128,3 +137,11 @@ Verify file access follows room access.
 - no presence state stuck forever after tab sleep
 - no unbounded queue behavior
 - no UI freeze in 100K history rooms
+
+## 10. Temporary demo-data strategy
+
+The current QA automation intentionally avoids hard-coded shared credentials.
+
+- smoke and load scripts generate fresh usernames and emails per run
+- a Docker volume reset returns the stack to a clean baseline
+- the same scripts can target alternate hosts through `QA_API_BASE_URL` and `QA_WEB_BASE_URL`

@@ -31,7 +31,10 @@ public sealed class ConversationSyncEndpointsTests
         Assert.Equal(room.ConversationId, payload!.ConversationId);
         Assert.Equal(payload.LatestWatermark, payload.MissingMessages.Last().Watermark);
         Assert.Equal([1L, 2L], payload.MissingMessages.Select(message => message.Watermark).ToArray());
-        Assert.Equal(["room.created", "room.member.joined"], payload.MissingMessages.Select(message => message.EventType).ToArray());
+        Assert.Collection(
+            payload.MissingMessages.Select(message => message.EventType),
+            eventType => Assert.Equal("room.created", eventType),
+            eventType => Assert.Equal("room.member.joined", eventType));
     }
 
     [Fact]
@@ -57,7 +60,10 @@ public sealed class ConversationSyncEndpointsTests
         var latestPage = await latestPageResponse.Content.ReadFromJsonAsync<ConversationTimelineResponse>();
         Assert.NotNull(latestPage);
         Assert.Equal([secondMessage.CreatedWatermark, thirdMessage.CreatedWatermark], latestPage!.Messages.Select(message => message.CreatedWatermark).ToArray());
-        Assert.Equal(["Second room message", "Third room reply"], latestPage.Messages.Select(message => message.Text).ToArray());
+        Assert.Collection(
+            latestPage.Messages,
+            message => Assert.Equal("Second room message", message.Text),
+            message => Assert.Equal("Third room reply", message.Text));
         Assert.Equal(secondMessage.CreatedWatermark, latestPage.NextCursor);
         Assert.Equal(firstMessage.MessageId, latestPage.Messages.Last().ReplyToMessageId);
         Assert.NotNull(latestPage.Messages.Last().ReplyPreview);
@@ -86,6 +92,104 @@ public sealed class ConversationSyncEndpointsTests
 
         var response = await outsiderClient.GetAsync($"/api/conversations/{room.ConversationId}/messages?pageSize=20");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Removed_Member_Cannot_Load_History_Or_Run_Sync_Repair()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        using var ownerClient = CreateClient(factory);
+        using var memberClient = CreateClient(factory);
+
+        await RegisterAsync(ownerClient, "sync-access-owner@example.com", "sync-access-owner");
+        await RegisterAsync(memberClient, "sync-access-member@example.com", "sync-access-member");
+
+        var room = await CreateRoomAsync(ownerClient, new CreateRoomRequest("Repair Boundary", "Sync access rules", false));
+        Assert.Equal(HttpStatusCode.OK, (await memberClient.PostAsync($"/api/rooms/{room.Id}/join", content: null)).StatusCode);
+
+        await PostMessageAsync(ownerClient, room.ConversationId, new PostMessageRequest("Before access loss"));
+
+        var removalResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/rooms/{room.Id}/members/remove",
+            new RemoveRoomMemberRequest("sync-access-member", "room moderation"));
+        Assert.Equal(HttpStatusCode.OK, removalResponse.StatusCode);
+
+        var blockedHistoryResponse = await memberClient.GetAsync($"/api/conversations/{room.ConversationId}/messages?pageSize=20");
+        Assert.Equal(HttpStatusCode.Forbidden, blockedHistoryResponse.StatusCode);
+
+        var blockedSyncResponse = await memberClient.GetAsync($"/api/conversations/{room.ConversationId}/sync?afterWatermark=0");
+        Assert.Equal(HttpStatusCode.Forbidden, blockedSyncResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Long_Absent_User_Catches_Up_Through_History_Paging_And_Targeted_Sync()
+    {
+        await using var factory = new TestWebApplicationFactory();
+        using var ownerClient = CreateClient(factory);
+        using var dormantClient = CreateClient(factory);
+
+        await RegisterAsync(ownerClient, "long-absent-owner@example.com", "long-absent-owner");
+        await RegisterAsync(dormantClient, "long-absent-member@example.com", "long-absent-member");
+
+        var room = await CreateRoomAsync(ownerClient, new CreateRoomRequest("Dormant Recovery", "Long absence tests", false));
+        Assert.Equal(HttpStatusCode.OK, (await dormantClient.PostAsync($"/api/rooms/{room.Id}/join", content: null)).StatusCode);
+
+        var initialSyncResponse = await dormantClient.GetAsync($"/api/conversations/{room.ConversationId}/sync?afterWatermark=0");
+        Assert.Equal(HttpStatusCode.OK, initialSyncResponse.StatusCode);
+
+        var initialSync = await initialSyncResponse.Content.ReadFromJsonAsync<ConversationSyncResponse>();
+        Assert.NotNull(initialSync);
+
+        ChatMessageResponse? anchorMessage = null;
+        ChatMessageResponse? latestMessage = null;
+
+        for (var index = 1; index <= 60; index++)
+        {
+            latestMessage = await PostMessageAsync(
+                ownerClient,
+                room.ConversationId,
+                new PostMessageRequest($"Catch-up message {index:000}"));
+
+            if (index == 48)
+            {
+                anchorMessage = latestMessage;
+            }
+        }
+
+        Assert.NotNull(anchorMessage);
+        Assert.NotNull(latestMessage);
+
+        var latestPageResponse = await dormantClient.GetAsync($"/api/conversations/{room.ConversationId}/messages?pageSize=20");
+        Assert.Equal(HttpStatusCode.OK, latestPageResponse.StatusCode);
+
+        var latestPage = await latestPageResponse.Content.ReadFromJsonAsync<ConversationTimelineResponse>();
+        Assert.NotNull(latestPage);
+        Assert.Equal(20, latestPage!.Messages.Count);
+        Assert.Equal("Catch-up message 041", latestPage.Messages[0].Text);
+        Assert.Equal("Catch-up message 060", latestPage.Messages[^1].Text);
+        Assert.Equal(latestPage.Messages[0].CreatedWatermark, latestPage.NextCursor);
+
+        var earlierPageResponse = await dormantClient.GetAsync(
+            $"/api/conversations/{room.ConversationId}/messages?beforeWatermark={latestPage.NextCursor}&pageSize=20");
+        Assert.Equal(HttpStatusCode.OK, earlierPageResponse.StatusCode);
+
+        var earlierPage = await earlierPageResponse.Content.ReadFromJsonAsync<ConversationTimelineResponse>();
+        Assert.NotNull(earlierPage);
+        Assert.Equal(20, earlierPage!.Messages.Count);
+        Assert.Equal("Catch-up message 021", earlierPage.Messages[0].Text);
+        Assert.Equal("Catch-up message 040", earlierPage.Messages[^1].Text);
+
+        var repairResponse = await dormantClient.GetAsync(
+            $"/api/conversations/{room.ConversationId}/sync?afterWatermark={anchorMessage.CreatedWatermark}");
+        Assert.Equal(HttpStatusCode.OK, repairResponse.StatusCode);
+
+        var repairPayload = await repairResponse.Content.ReadFromJsonAsync<ConversationSyncResponse>();
+        Assert.NotNull(repairPayload);
+        Assert.Equal(room.ConversationId, repairPayload!.ConversationId);
+        Assert.Equal(12, repairPayload.MissingMessages.Count);
+        Assert.Equal("Catch-up message 049", repairPayload.MissingMessages[0].TextContent);
+        Assert.Equal("Catch-up message 060", repairPayload.MissingMessages[^1].TextContent);
+        Assert.Equal(latestMessage.CreatedWatermark, repairPayload.LatestWatermark);
     }
 
     private static HttpClient CreateClient(TestWebApplicationFactory factory)

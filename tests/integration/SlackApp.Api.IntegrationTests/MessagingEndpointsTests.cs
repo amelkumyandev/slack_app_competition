@@ -32,7 +32,8 @@ public sealed class MessagingEndpointsTests
         var history = await historyResponse.Content.ReadFromJsonAsync<ConversationTimelineResponse>();
         Assert.NotNull(history);
         Assert.Equal(2, history!.Messages.Count);
-        Assert.Contains('\n', history.Messages[0].Text);
+        Assert.NotNull(history.Messages[0].Text);
+        Assert.Contains('\n', history.Messages[0].Text!);
         Assert.Equal(firstMessage.MessageId, history.Messages[1].ReplyToMessageId);
         Assert.NotNull(history.Messages[1].ReplyPreview);
         Assert.Equal("dm-alice", history.Messages[1].ReplyPreview!.AuthorUserName);

@@ -134,19 +134,38 @@ Optional later services:
 - verify live delivery stays within target latency
 - verify reconnect and sync repair continue to work under load
 
-## Automated QA recommendation
+## Automated QA commands
 
-Add an `e2e` container later so QA can run:
-
-```bash
-docker compose run --rm e2e
-```
-
-Add a `loadtest` container later so QA can run:
+With the Docker stack up, QA can now run:
 
 ```bash
-docker compose run --rm loadtest
+npm run qa:smoke
 ```
+
+This script covers:
+
+- web route reachability
+- auth bootstrap
+- session lookup
+- room creation/join
+- room message + reply
+- friendship acceptance + direct conversation bootstrap
+- attachment upload/download and loss-of-access enforcement
+- presence heartbeat recording
+
+For advanced scenarios, QA can also run:
+
+```bash
+npm run qa:load:history
+npm run qa:load:fanout
+```
+
+Recommended environment overrides when needed:
+
+- `QA_API_BASE_URL`
+- `QA_WEB_BASE_URL`
+- `QA_HISTORY_MESSAGE_COUNT`
+- `QA_FANOUT_USER_COUNT`
 
 ## Operational validation
 
@@ -165,7 +184,8 @@ The final README should include:
 
 - startup command
 - default ports / URL
-- demo credentials if seeded
+- the smoke and load commands
+- the temporary-user strategy used by QA scripts
 - how to run tests
 - how to reset local data
 - known limitations if any

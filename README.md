@@ -18,6 +18,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/unread-and-chat-navigation` adds per-user conversation read watermarks, unread counters for rooms and directs, and live chat navigation pills that clear as conversations are opened.
 - `feat/slack-like-shell-and-core-screens` adds a shared app shell, a dedicated `/auth` route, and cohesive route framing across auth, chat, sessions, and presence.
 - `feat/admin-modals-and-room-management-ui` adds a keyboard-friendly room management modal in `/chat` with member search, admin controls, ban review, invitation actions, and destructive room confirmations.
+- `feat/qa-hardening-and-load-tests` adds stronger sync/access integration coverage, a Docker-stack smoke runner, reproducible load scripts for 100K history and realtime fan-out, and clearer QA run instructions.
 
 ## Planned Stack
 
@@ -82,6 +83,9 @@ dotnet run --project apps/api
 npm install
 npm run build
 npm run lint
+npm run qa:smoke
+npm run qa:load:history
+npm run qa:load:fanout
 npm run test
 npm run dev:web
 ```
@@ -109,6 +113,42 @@ The Compose stack includes:
 - `postgres` for durable data
 - `redis` for presence and ephemeral coordination
 - `uploads_data` as the mounted local attachment volume
+
+## QA Automation
+
+Once the Docker stack is running, the repo now includes:
+
+```bash
+npm run qa:smoke
+```
+
+This smoke runner verifies the main HTTP surface end to end:
+
+- health and route reachability
+- registration and current-session lookup
+- room creation and membership
+- room messaging and replies
+- friendship + direct-message startup
+- attachment upload and access revocation
+- presence heartbeat recording
+
+The load folder now also includes two optional QA scenarios:
+
+```bash
+npm run qa:load:history
+npm run qa:load:fanout
+```
+
+- `qa:load:history` seeds a large room history, checks paged retrieval, and validates targeted sync repair for a long-absent member
+- `qa:load:fanout` opens many authenticated SignalR clients against one room and measures message fan-out delivery
+
+Useful environment overrides:
+
+- `QA_API_BASE_URL` and `QA_WEB_BASE_URL` if the stack is not running on the default ports
+- `QA_HISTORY_MESSAGE_COUNT`, `QA_HISTORY_REPAIR_WINDOW`, and `QA_HISTORY_PAGE_SIZE` for the history scenario
+- `QA_FANOUT_USER_COUNT`, `QA_FANOUT_MESSAGE_COUNT`, and `QA_FANOUT_TIMEOUT_MS` for the realtime fan-out scenario
+
+The QA scripts do not rely on fixed demo credentials. They create fresh temporary users and rooms on each run so a clean Docker reset is enough to start over.
 
 ## Current Auth API
 

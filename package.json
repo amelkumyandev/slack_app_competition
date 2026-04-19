@@ -10,6 +10,9 @@
     "dev:api": "dotnet run --project apps/api",
     "dev:web": "npm --workspace apps/web run dev",
     "lint": "npm --workspace apps/web run lint",
+    "qa:load:fanout": "node tests/load/qa-load-runner.mjs fanout",
+    "qa:load:history": "node tests/load/qa-load-runner.mjs history",
+    "qa:smoke": "node tests/e2e/docker-smoke.mjs",
     "test": "npm --workspace apps/web run test"
   }
 }
