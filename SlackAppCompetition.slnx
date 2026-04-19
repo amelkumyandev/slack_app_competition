@@ -8,6 +8,9 @@
   <Folder Name="/src/Modules/Identity/">
     <Project Path="src/Modules/Identity/SlackApp.Modules.Identity.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Sessions/">
+    <Project Path="src/Modules/Sessions/SlackApp.Modules.Sessions.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/integration/" />
   <Folder Name="/tests/integration/SlackApp.Api.IntegrationTests/">

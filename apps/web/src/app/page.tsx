@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const backendModules = [
   ["Identity", "Account lifecycle, login, password flows"],
   ["Sessions", "Per-browser sessions and selective revocation"],
@@ -15,7 +17,7 @@ const scaffoldingMilestones = [
   ["F01", "Monorepo scaffold and starter apps"],
   ["F02", "Docker Compose bootstrap"],
   ["F03", "Auth and account core"],
-  ["F07", "Realtime SignalR foundation"],
+  ["F04", "Session management screen"],
 ] as const;
 
 export default function Home() {
@@ -30,9 +32,15 @@ export default function Home() {
               <p>
                 This branch lays down the repo structure for a Next.js frontend,
                 an ASP.NET Core API, shared backend modules, and the test lanes
-                we will fill in branch by branch.
+                we will fill in branch by branch. The first interactive screen is
+                now the session-management workspace.
               </p>
-              <div className="badge">Next stop: Docker Compose bootstrap</div>
+              <div className="hero-actions">
+                <Link className="primary-link" href="/sessions">
+                  Open sessions workspace
+                </Link>
+                <div className="badge">Current slice: persistent sessions and revoke UI</div>
+              </div>
             </div>
 
             <div className="callouts">
@@ -87,8 +95,8 @@ export default function Home() {
         </section>
 
         <section className="footer-note">
-          The UI here is only a placeholder landing page. The Slack-like shell,
-          chat views, admin flows, and reconnect states are intentionally deferred
+          This landing page stays intentionally lightweight. The full Slack-like
+          shell, chat views, admin flows, and reconnect states are still deferred
           to later branches in the implementation backlog.
         </section>
       </div>

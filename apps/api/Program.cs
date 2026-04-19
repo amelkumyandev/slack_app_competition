@@ -1,4 +1,5 @@
 using SlackApp.Modules.Identity.Extensions;
+using SlackApp.Modules.Sessions.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +18,7 @@ builder.Services.AddCors(options =>
     });
 });
 builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddSessionsModule();
 
 var app = builder.Build();
 
@@ -47,7 +49,7 @@ var modules = new[]
 app.MapGet("/", () => Results.Ok(new
 {
     application = "Slack App Competition API",
-    status = "auth-core-ready",
+    status = "session-management-ready",
     architecture = "modular-monolith",
     auth = "cookie-session",
     realtime = "signalr-planned",
@@ -69,6 +71,7 @@ app.MapGet("/api/meta", () => Results.Ok(new
 }));
 
 app.MapIdentityModule();
+app.MapSessionsModule();
 
 app.Run();
 

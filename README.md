@@ -7,6 +7,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/scaffold-monorepo` established the monorepo layout and starter apps.
 - `feat/docker-compose-bootstrap` adds Dockerfiles, Compose services, healthchecks, and startup docs.
 - `feat/auth-and-account-core` adds cookie-backed registration, login, password management, and current-session logout foundations.
+- `feat/session-management-screen` adds the persisted sessions API, selective revoke flow, and the first interactive web workspace at `/sessions`.
 - Business features are intentionally not implemented yet.
 
 ## Planned Stack
@@ -115,6 +116,20 @@ The backend now exposes the initial auth/account endpoints:
 
 Auth is currently implemented with a database-backed cookie session model so later session-management work can build on the same persistence instead of replacing it.
 
+## Current Sessions API
+
+The session-management slice now exposes:
+
+- `GET /api/sessions`
+- `DELETE /api/sessions/{sessionId}`
+
+The web app includes a focused `/sessions` route that can:
+
+- sign in or create an account for demo purposes
+- show the current browser session distinctly
+- list other persisted sessions
+- revoke another session without logging out the current browser
+
 ## Environment Contract
 
 Copy `.env.example` to `.env` if you want to override the defaults. The Compose file is written with safe fallbacks, so the stack can still start without a local `.env` file.
@@ -168,6 +183,7 @@ Recommended early merge order:
 2. `feat/docker-compose-bootstrap`
 3. `feat/auth-and-account-core`
 4. `feat/session-management-screen`
+5. `feat/friends-and-user-ban`
 
 ## Notes
 

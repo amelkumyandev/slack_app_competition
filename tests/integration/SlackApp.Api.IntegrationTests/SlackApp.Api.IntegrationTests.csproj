@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\apps\api\SlackApp.Api.csproj" />
     <ProjectReference Include="..\..\..\src\Modules\Identity\SlackApp.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\..\src\Modules\Sessions\SlackApp.Modules.Sessions.csproj" />
   </ItemGroup>
 
 </Project>
