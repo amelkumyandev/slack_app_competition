@@ -10,6 +10,7 @@ namespace SlackApp.Modules.Presence.Hubs;
 [Authorize]
 public sealed class RealtimeHub(
     ConversationAccessService conversationAccessService,
+    PresenceService presenceService,
     TimeProvider timeProvider,
     ILogger<RealtimeHub> logger) : Hub
 {
@@ -108,5 +109,15 @@ public sealed class RealtimeHub(
     public ServerHeartbeatResponse Ping()
     {
         return new ServerHeartbeatResponse(timeProvider.GetUtcNow());
+    }
+
+    public async Task<PresenceHeartbeatAcceptedResponse> Heartbeat(PresenceHeartbeatRequest request)
+    {
+        if (!SessionPrincipalFactory.TryGetIdentifiers(Context.User, out var userId, out _))
+        {
+            throw new HubException("Authentication is required for presence heartbeats.");
+        }
+
+        return await presenceService.RecordHeartbeatAsync(userId, request, Context.ConnectionAborted);
     }
 }

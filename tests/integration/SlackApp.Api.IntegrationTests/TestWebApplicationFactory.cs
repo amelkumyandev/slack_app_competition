@@ -22,7 +22,12 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             {
                 ["Identity:InitializeOnStartup"] = "false",
                 ["Identity:DatabaseProvider"] = "Sqlite",
-                ["ConnectionStrings:IdentitySqlite"] = $"Data Source={sqliteDatabasePath}"
+                ["ConnectionStrings:IdentitySqlite"] = $"Data Source={sqliteDatabasePath}",
+                ["Presence:Store"] = "InMemory",
+                ["Presence:HeartbeatIntervalSeconds"] = "1",
+                ["Presence:HeartbeatTtlSeconds"] = "3",
+                ["Presence:AfkThresholdSeconds"] = "1",
+                ["Presence:SweepIntervalSeconds"] = "1"
             });
         });
 

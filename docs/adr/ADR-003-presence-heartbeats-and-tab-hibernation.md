@@ -12,6 +12,8 @@ Presence must support online, AFK, and offline across multiple tabs. Browsers ca
 
 Use per-tab heartbeats with TTL in Redis. The client sends periodic heartbeats with last interaction metadata while the tab is alive. The server computes user presence from the freshest tab records.
 
+For this repo's current implementation, Docker uses Redis as the primary presence store, while tests and local non-Docker runs use an in-memory fallback so the canonical build and test commands remain stable without extra infrastructure.
+
 ## Consequences
 
 ### Positive
@@ -29,6 +31,7 @@ Use per-tab heartbeats with TTL in Redis. The client sends periodic heartbeats w
 
 - each tab has a `tabId`
 - store `lastInteractionAt` and `lastHeartbeatAt`
+- include `visibilityState` and `connectedAt`
 - online if any live tab is recently active
 - AFK if tabs exist but all are idle
 - offline if all tab heartbeats expire

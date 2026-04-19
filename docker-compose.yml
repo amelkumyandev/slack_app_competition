@@ -47,6 +47,11 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-slack_app};Username=${POSTGRES_USER:-slack_app};Password=${POSTGRES_PASSWORD:-change-me}
       ConnectionStrings__Redis: redis:6379
+      Presence__Store: ${PRESENCE_STORE:-Redis}
+      Presence__HeartbeatIntervalSeconds: ${PRESENCE_HEARTBEAT_INTERVAL_SECONDS:-20}
+      Presence__HeartbeatTtlSeconds: ${PRESENCE_HEARTBEAT_TTL_SECONDS:-75}
+      Presence__AfkThresholdSeconds: ${PRESENCE_AFK_THRESHOLD_SECONDS:-60}
+      Presence__SweepIntervalSeconds: ${PRESENCE_SWEEP_INTERVAL_SECONDS:-15}
       Storage__UploadsRoot: /app/uploads
     ports:
       - "${API_HTTP_PORT:-8080}:8080"

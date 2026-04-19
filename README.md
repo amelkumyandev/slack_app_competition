@@ -11,6 +11,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/friends-and-user-ban` adds the contacts/social-graph API for friend requests, friendship removal, user bans, and direct-message authorization checks.
 - `feat/rooms-membership-and-moderation` adds backend room creation, public catalog search, public joins, private invitations, admin assignment, and remove-member-as-ban moderation flows.
 - `feat/realtime-signalr-foundation` adds the authenticated SignalR hub, user and conversation groups, and realtime event routing for room/contact hints.
+- `feat/presence-heartbeats-and-hibernation` adds per-tab presence heartbeats, aggregate online/AFK/offline inference, Redis-backed Docker storage with in-memory test fallback, and a live `/presence` workspace.
 - Business features are intentionally not implemented yet.
 
 ## Planned Stack
@@ -192,6 +193,7 @@ Current hub methods:
 
 - `SubscribeConversation`
 - `UnsubscribeConversation`
+- `Heartbeat`
 - `Ping`
 
 Current client events:
@@ -207,6 +209,29 @@ Current foundation guarantees:
 - room/contact actions publish targeted realtime hints without polling
 - reconnect strategy remains REST-based for gap repair rather than per-user queues
 
+## Current Presence Contract
+
+The presence slice now exposes:
+
+- `GET /api/presence/me`
+- `POST /api/presence/heartbeat`
+- `SignalR hub method: Heartbeat`
+
+Current presence guarantees:
+
+- each browser tab keeps a stable `tabId` in session storage
+- heartbeats include `tabId`, `lastInteractionAtUtc`, `visibilityState`, and `connectedAtUtc`
+- the server aggregates live tabs into `online`, `afk`, or `offline`
+- AFK and offline are inferred from freshness and expiry rather than explicit inactive signals
+- Docker uses Redis for presence storage, while tests and local non-Docker runs default to the in-memory store
+
+The web app now includes a focused `/presence` route that:
+
+- opens the authenticated SignalR channel
+- sends an immediate heartbeat on startup, focus, reconnect, and visibility restore
+- keeps a scheduled heartbeat loop alive while the tab is active
+- shows the current aggregate, live tab inventory, reconnect state, and recent presence transitions
+
 ## Environment Contract
 
 Copy `.env.example` to `.env` if you want to override the defaults. The Compose file is written with safe fallbacks, so the stack can still start without a local `.env` file.
@@ -216,6 +241,7 @@ The main variables cover:
 - API and web host ports
 - PostgreSQL credentials
 - Redis port
+- presence store and heartbeat timings
 - uploads storage location
 - browser-visible API and SignalR URLs
 
@@ -264,9 +290,10 @@ Recommended early merge order:
 6. `feat/rooms-membership-and-moderation`
 7. `feat/realtime-signalr-foundation`
 8. `feat/presence-heartbeats-and-hibernation`
+9. `feat/conversation-watermarks-and-gap-recovery`
 
 ## Notes
 
 - The backend remains a single deployment unit with clear internal boundaries.
-- SignalR, PostgreSQL, Redis, and filesystem storage are now part of the active implementation path, with richer messaging and presence behavior still coming in later branches.
+- SignalR, PostgreSQL, Redis, and filesystem storage are now part of the active implementation path, with watermarks, durable messaging, and attachments still coming in later branches.
 - XMPP stays out of phase 1 work until the core scope is stable.

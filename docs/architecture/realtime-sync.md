@@ -54,6 +54,7 @@ Current hub methods:
 
 - `SubscribeConversation`
 - `UnsubscribeConversation`
+- `Heartbeat`
 - `Ping`
 
 Current client events:
@@ -71,6 +72,29 @@ That means the current SignalR group for a room conversation is:
 - `conversation:room:{roomId}`
 
 This keeps the naming aligned with the broader conversation model while the unified `conversation_id` table lands in later branches.
+
+## 3.2 Current presence heartbeat contract
+
+The current implementation also exposes:
+
+- `GET /api/presence/me`
+- `POST /api/presence/heartbeat`
+- `presence.state.changed` through the generic `event.received` SignalR envelope
+
+The current client heartbeat payload includes:
+
+- `tabId`
+- `lastInteractionAtUtc`
+- `visibilityState`
+- `connectedAtUtc`
+
+The current aggregate state rules are:
+
+- `online` when at least one live tab has recent interaction
+- `afk` when live tabs exist but all tracked interactions are stale
+- `offline` when all tab heartbeats have expired
+
+In Docker, the presence store is Redis-backed. In tests and local non-Docker runs, the repo currently falls back to an in-memory store so the stable build and test commands do not require a live Redis instance.
 
 ## 4. Watermark contract
 
@@ -149,6 +173,7 @@ This supports unread counts without storing huge per-message delivery state.
 The client should surface friendly states:
 
 - reconnecting
+- heartbeat retrying
 - syncing missing messages
 - connection restored
 - retrying
@@ -157,6 +182,7 @@ The server should log:
 
 - connection opened/closed
 - group join/leave
+- presence state transitions
 - sync request duration
 - number of recovered messages
 - missed watermark windows

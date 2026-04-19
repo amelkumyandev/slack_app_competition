@@ -23,7 +23,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddSessionsModule();
 builder.Services.AddContactsModule();
-builder.Services.AddPresenceModule();
+builder.Services.AddPresenceModule(builder.Configuration);
 builder.Services.AddRoomsModule();
 
 var app = builder.Build();
@@ -55,10 +55,10 @@ var modules = new[]
 app.MapGet("/", () => Results.Ok(new
 {
     application = "Slack App Competition API",
-    status = "signalr-foundation-ready",
+    status = "presence-heartbeats-ready",
     architecture = "modular-monolith",
     auth = "cookie-session",
-    realtime = "signalr-foundation",
+    realtime = "signalr-presence",
     modules
 }));
 
@@ -71,6 +71,7 @@ app.MapGet("/api/meta", () => Results.Ok(new
     {
         postgresConfigured = !string.IsNullOrWhiteSpace(app.Configuration.GetConnectionString("Postgres")),
         redisConfigured = !string.IsNullOrWhiteSpace(app.Configuration.GetConnectionString("Redis")),
+        presenceStore = app.Configuration["Presence:Store"] ?? "InMemory",
         uploadsRoot = app.Configuration["Storage:UploadsRoot"] ?? "uploads",
         auth = "cookie-session",
         signalrHub = "/hubs/realtime"

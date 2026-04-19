@@ -36,6 +36,7 @@ public static class RealtimeHubMethods
 {
     public const string SubscribeConversation = "SubscribeConversation";
     public const string UnsubscribeConversation = "UnsubscribeConversation";
+    public const string Heartbeat = "Heartbeat";
     public const string Ping = "Ping";
 }
 

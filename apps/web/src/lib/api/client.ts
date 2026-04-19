@@ -1,4 +1,5 @@
 export const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080").replace(/\/$/, "");
+export const signalrUrl = (process.env.NEXT_PUBLIC_SIGNALR_URL ?? `${apiBaseUrl}/hubs/realtime`).replace(/\/$/, "");
 
 export class ApiClientError extends Error {
   status: number;

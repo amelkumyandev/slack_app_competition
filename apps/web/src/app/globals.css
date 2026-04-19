@@ -278,6 +278,12 @@ a {
   padding: 2rem 1.25rem 3rem;
 }
 
+.presence-page {
+  min-height: 100vh;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.presence-shell,
 .sessions-shell {
   max-width: 1200px;
   margin: 0 auto;
@@ -285,6 +291,7 @@ a {
   gap: 1.25rem;
 }
 
+.presence-hero,
 .sessions-hero {
   display: flex;
   justify-content: space-between;
@@ -298,6 +305,13 @@ a {
   color: #f7fafc;
 }
 
+.presence-hero {
+  background:
+    linear-gradient(135deg, rgba(13, 140, 125, 0.95), rgba(18, 32, 51, 0.9)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 14rem);
+}
+
+.presence-hero p,
 .sessions-hero p {
   max-width: 46rem;
   color: rgba(247, 250, 252, 0.82);
@@ -314,6 +328,14 @@ a {
   align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.presence-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.85rem;
 }
 
 .status-strip {
@@ -365,6 +387,13 @@ a {
   gap: 1.25rem;
 }
 
+.presence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+  gap: 1.25rem;
+}
+
+.presence-panel,
 .session-panel {
   padding: 1.4rem;
   border-radius: 24px;
@@ -475,6 +504,86 @@ a {
   gap: 0.95rem;
 }
 
+.presence-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.presence-summary span,
+.presence-details dt {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.presence-summary strong,
+.presence-details dd {
+  margin: 0;
+}
+
+.presence-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.presence-callout {
+  margin-top: 1rem;
+  padding: 1rem 1.05rem;
+  border-radius: 20px;
+  background: rgba(13, 140, 125, 0.08);
+  border: 1px solid rgba(13, 140, 125, 0.14);
+}
+
+.presence-callout p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.presence-tab-list,
+.presence-feed {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.presence-tab-card,
+.presence-feed-item {
+  padding: 1rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(18, 32, 51, 0.08);
+}
+
+.presence-feed-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.presence-feed-item p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.presence-feed-item span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.presence-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
 .session-card {
   padding: 1rem;
   border-radius: 20px;
@@ -520,6 +629,21 @@ a {
 .chip-active {
   background: rgba(13, 140, 125, 0.1);
   color: #0a5d53;
+}
+
+.chip-online {
+  background: rgba(13, 140, 125, 0.12);
+  color: #0a5d53;
+}
+
+.chip-afk {
+  background: rgba(222, 156, 54, 0.16);
+  color: #88550b;
+}
+
+.chip-offline {
+  background: rgba(95, 107, 125, 0.14);
+  color: #4f5d70;
 }
 
 .chip-revoked {
@@ -600,8 +724,11 @@ a {
 @media (max-width: 900px) {
   .hero-grid,
   .grid,
+  .presence-grid,
   .sessions-grid,
   .status-strip,
+  .presence-summary,
+  .presence-details,
   .account-summary,
   .session-details {
     grid-template-columns: 1fr;
@@ -619,13 +746,19 @@ a {
     text-align: left;
   }
 
+  .presence-hero,
   .sessions-hero,
   .panel-header,
   .session-card-header {
     flex-direction: column;
   }
 
+  .presence-actions,
   .sessions-actions {
     align-items: stretch;
+  }
+
+  .presence-feed-item {
+    flex-direction: column;
   }
 }
