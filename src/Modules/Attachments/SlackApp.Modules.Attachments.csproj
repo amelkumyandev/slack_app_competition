@@ -11,7 +11,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Attachments\SlackApp.Modules.Attachments.csproj" />
     <ProjectReference Include="..\Identity\SlackApp.Modules.Identity.csproj" />
     <ProjectReference Include="..\Messaging\SlackApp.Modules.Messaging.csproj" />
     <ProjectReference Include="..\Presence\SlackApp.Modules.Presence.csproj" />

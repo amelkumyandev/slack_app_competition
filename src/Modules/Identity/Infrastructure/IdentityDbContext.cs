@@ -23,6 +23,8 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
 
+    public DbSet<MessageAttachment> MessageAttachments => Set<MessageAttachment>();
+
     public DbSet<RoomMember> RoomMembers => Set<RoomMember>();
 
     public DbSet<RoomAdmin> RoomAdmins => Set<RoomAdmin>();
@@ -157,6 +159,24 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .OnDelete(DeleteBehavior.SetNull);
         conversationMessages.HasIndex(message => new { message.ConversationId, message.MessageId });
         conversationMessages.HasIndex(message => new { message.ConversationId, message.Watermark }).IsUnique();
+
+        var messageAttachments = modelBuilder.Entity<MessageAttachment>();
+        messageAttachments.ToTable("message_attachments");
+        messageAttachments.HasKey(attachment => attachment.Id);
+        messageAttachments.Property(attachment => attachment.OriginalFileName).HasMaxLength(255).IsRequired();
+        messageAttachments.Property(attachment => attachment.StoredFileName).HasMaxLength(255).IsRequired();
+        messageAttachments.Property(attachment => attachment.RelativePath).HasMaxLength(1024).IsRequired();
+        messageAttachments.Property(attachment => attachment.ContentType).HasMaxLength(255).IsRequired();
+        messageAttachments.HasOne<Conversation>()
+            .WithMany()
+            .HasForeignKey(attachment => attachment.ConversationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        messageAttachments.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(attachment => attachment.UploadedByUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        messageAttachments.HasIndex(attachment => new { attachment.ConversationId, attachment.MessageId });
+        messageAttachments.HasIndex(attachment => attachment.RelativePath).IsUnique();
 
         var roomMembers = modelBuilder.Entity<RoomMember>();
         roomMembers.ToTable("room_members");

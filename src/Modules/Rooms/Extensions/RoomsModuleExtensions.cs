@@ -98,6 +98,21 @@ public static class RoomsModuleExtensions
             return result.ToResult();
         });
 
+        group.MapDelete("/{roomId:guid}", async (
+            Guid roomId,
+            ClaimsPrincipal principal,
+            RoomManagementService roomManagementService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!SessionPrincipalFactory.TryGetIdentifiers(principal, out var userId, out _))
+            {
+                return Results.Unauthorized();
+            }
+
+            var result = await roomManagementService.DeleteRoomAsync(userId, roomId, cancellationToken);
+            return result.ToResult();
+        });
+
         group.MapPost("/{roomId:guid}/invitations", async (
             Guid roomId,
             ClaimsPrincipal principal,

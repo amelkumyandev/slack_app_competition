@@ -5,6 +5,9 @@
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Attachments/">
+    <Project Path="src/Modules/Attachments/SlackApp.Modules.Attachments.csproj" />
+  </Folder>
   <Folder Name="/src/Modules/Contacts/">
     <Project Path="src/Modules/Contacts/SlackApp.Modules.Contacts.csproj" />
   </Folder>

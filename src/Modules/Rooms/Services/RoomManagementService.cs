@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using SlackApp.Modules.Attachments.Services;
 using SlackApp.Modules.Identity.Contracts;
 using SlackApp.Modules.Identity.Domain;
 using SlackApp.Modules.Identity.Infrastructure;
@@ -15,7 +16,8 @@ public sealed partial class RoomManagementService(
     IdentityDbContext dbContext,
     TimeProvider timeProvider,
     ConversationService conversationService,
-    IRealtimeNotifier realtimeNotifier)
+    IRealtimeNotifier realtimeNotifier,
+    IAttachmentAssetManager attachmentAssetManager)
 {
     public async Task<RoomServiceResult<RoomDirectoryResponse>> GetDirectoryAsync(
         Guid userId,
@@ -405,6 +407,35 @@ public sealed partial class RoomManagementService(
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return RoomServiceResult<MessageResponse>.Success(new MessageResponse("Left room."));
+    }
+
+    public async Task<RoomServiceResult<MessageResponse>> DeleteRoomAsync(
+        Guid actorUserId,
+        Guid roomId,
+        CancellationToken cancellationToken)
+    {
+        var room = await dbContext.Rooms.SingleOrDefaultAsync(candidate => candidate.Id == roomId, cancellationToken);
+        if (room is null)
+        {
+            return RoomServiceResult<MessageResponse>.Failure(
+                "room_not_found",
+                "That room could not be found.",
+                StatusCodes.Status404NotFound);
+        }
+
+        if (room.OwnerUserId != actorUserId)
+        {
+            return RoomServiceResult<MessageResponse>.Failure(
+                "room_owner_required",
+                "Only the room owner can delete the room.",
+                StatusCodes.Status403Forbidden);
+        }
+
+        await attachmentAssetManager.DeleteConversationAssetsAsync(room.ConversationId, cancellationToken);
+        dbContext.Rooms.Remove(room);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return RoomServiceResult<MessageResponse>.Success(new MessageResponse("Room deleted permanently."));
     }
 
     public async Task<RoomServiceResult<MessageResponse>> InviteUserAsync(

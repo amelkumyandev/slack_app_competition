@@ -71,6 +71,8 @@ public sealed class ConversationService(
             .OrderBy(candidate => candidate.Watermark)
             .ToListAsync(cancellationToken);
 
+        var attachmentLookup = await LoadAttachmentLookupAsync(pageMessageIds, cancellationToken);
+
         var materializedMessages = pageEvents
             .GroupBy(candidate => candidate.MessageId!.Value)
             .Select(MaterializeMessage)
@@ -101,9 +103,69 @@ public sealed class ConversationService(
             access.Conversation!.CurrentWatermark,
             normalizedPageSize,
             descendingCreatedMessages.Count == normalizedPageSize ? descendingCreatedMessages[^1].Watermark : null,
-            materializedMessages.Select(candidate => MapChatMessage(candidate, userId, access, userLookup, replyLookup)).ToArray());
+            materializedMessages.Select(candidate => MapChatMessage(candidate, userId, access, userLookup, replyLookup, attachmentLookup)).ToArray());
 
         return ConversationQueryResult<ConversationTimelineResponse>.Success(response);
+    }
+
+    public async Task<ConversationQueryResult<ConversationAccessGrant>> GetAccessAsync(
+        Guid userId,
+        Guid conversationId,
+        bool requireWrite,
+        CancellationToken cancellationToken)
+    {
+        var access = await AuthorizeConversationAccessAsync(userId, conversationId, requireWrite, cancellationToken);
+        if (!access.Succeeded)
+        {
+            return ConversationQueryResult<ConversationAccessGrant>.Failure(
+                access.ErrorCode!,
+                access.ErrorMessage!,
+                access.StatusCode);
+        }
+
+        return ConversationQueryResult<ConversationAccessGrant>.Success(new ConversationAccessGrant(
+            access.Conversation!.Id,
+            access.Conversation.Kind,
+            access.Conversation.RoomId,
+            access.OtherUserId,
+            access.AccessMode,
+            access.CanWrite,
+            access.CanDeleteAnyMessage));
+    }
+
+    public async Task<ConversationQueryResult<ChatMessageResponse>> GetMessageAsync(
+        Guid userId,
+        Guid conversationId,
+        Guid messageId,
+        CancellationToken cancellationToken)
+    {
+        var access = await AuthorizeConversationAccessAsync(userId, conversationId, requireWrite: false, cancellationToken);
+        if (!access.Succeeded)
+        {
+            return ConversationQueryResult<ChatMessageResponse>.Failure(
+                access.ErrorCode!,
+                access.ErrorMessage!,
+                access.StatusCode);
+        }
+
+        var materializedMessage = await LoadMaterializedMessageAsync(conversationId, messageId, cancellationToken);
+        if (materializedMessage is null)
+        {
+            return ConversationQueryResult<ChatMessageResponse>.Failure(
+                "message_not_found",
+                "That message could not be found.",
+                StatusCodes.Status404NotFound);
+        }
+
+        var userLookup = await LoadUserLookupAsync([materializedMessage.AuthorUserId], cancellationToken);
+        var replyLookup = await LoadReplyPreviewLookupAsync(
+            conversationId,
+            materializedMessage.ReplyToMessageId is { } replyId ? [replyId] : [],
+            cancellationToken);
+        var attachmentLookup = await LoadAttachmentLookupAsync([materializedMessage.MessageId], cancellationToken);
+
+        return ConversationQueryResult<ChatMessageResponse>.Success(
+            MapChatMessage(materializedMessage, userId, access, userLookup, replyLookup, attachmentLookup));
     }
 
     public async Task<ConversationQueryResult<ConversationSyncResponse>> GetSyncAsync(
@@ -342,8 +404,9 @@ public sealed class ConversationService(
         {
             replyLookup[replyTarget.MessageId] = replyTarget;
         }
+        var attachmentLookup = new Dictionary<Guid, IReadOnlyList<MessageAttachmentResponse>>();
 
-        var response = MapChatMessage(MaterializeMessage([message]), userId, access, userLookup, replyLookup);
+        var response = MapChatMessage(MaterializeMessage([message]), userId, access, userLookup, replyLookup, attachmentLookup);
         await realtimeNotifier.NotifyConversationAsync(
             message.EventType,
             conversationId,
@@ -409,8 +472,9 @@ public sealed class ConversationService(
         {
             var existingLookup = await LoadUserLookupAsync([materializedMessage.AuthorUserId], cancellationToken);
             var existingReplyLookup = await LoadReplyPreviewLookupAsync(conversationId, materializedMessage.ReplyToMessageId is { } existingReplyId ? [existingReplyId] : [], cancellationToken);
+            var existingAttachmentLookup = await LoadAttachmentLookupAsync([materializedMessage.MessageId], cancellationToken);
             return ConversationQueryResult<ChatMessageResponse>.Success(
-                MapChatMessage(materializedMessage, userId, access, existingLookup, existingReplyLookup));
+                MapChatMessage(materializedMessage, userId, access, existingLookup, existingReplyLookup, existingAttachmentLookup));
         }
 
         var now = timeProvider.GetUtcNow();
@@ -441,7 +505,8 @@ public sealed class ConversationService(
         var updatedMessage = MaterializeMessage(updatedEvents);
         var userLookup = await LoadUserLookupAsync([updatedMessage.AuthorUserId], cancellationToken);
         var replyLookup = await LoadReplyPreviewLookupAsync(conversationId, updatedMessage.ReplyToMessageId is { } replyId ? [replyId] : [], cancellationToken);
-        var response = MapChatMessage(updatedMessage, userId, access, userLookup, replyLookup);
+        var attachmentLookup = await LoadAttachmentLookupAsync([updatedMessage.MessageId], cancellationToken);
+        var response = MapChatMessage(updatedMessage, userId, access, userLookup, replyLookup, attachmentLookup);
 
         await realtimeNotifier.NotifyConversationAsync(
             editEvent.EventType,
@@ -516,7 +581,8 @@ public sealed class ConversationService(
         var updatedMessage = MaterializeMessage(updatedEvents);
         var userLookup = await LoadUserLookupAsync([updatedMessage.AuthorUserId], cancellationToken);
         var replyLookup = await LoadReplyPreviewLookupAsync(conversationId, updatedMessage.ReplyToMessageId is { } replyId ? [replyId] : [], cancellationToken);
-        var response = MapChatMessage(updatedMessage, userId, access, userLookup, replyLookup);
+        var attachmentLookup = await LoadAttachmentLookupAsync([updatedMessage.MessageId], cancellationToken);
+        var response = MapChatMessage(updatedMessage, userId, access, userLookup, replyLookup, attachmentLookup);
 
         await realtimeNotifier.NotifyConversationAsync(
             deleteEvent.EventType,
@@ -709,6 +775,30 @@ public sealed class ConversationService(
             .ToDictionary(group => group.Key, group => MaterializeMessage(group));
     }
 
+    private async Task<Dictionary<Guid, IReadOnlyList<MessageAttachmentResponse>>> LoadAttachmentLookupAsync(
+        IEnumerable<Guid> messageIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = messageIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new Dictionary<Guid, IReadOnlyList<MessageAttachmentResponse>>();
+        }
+
+        var attachments = await dbContext.MessageAttachments
+            .Where(candidate => ids.Contains(candidate.MessageId))
+            .ToListAsync(cancellationToken);
+
+        return attachments
+            .OrderBy(candidate => candidate.CreatedAtUtc)
+            .GroupBy(candidate => candidate.MessageId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<MessageAttachmentResponse>)group
+                    .Select(MapAttachment)
+                    .ToArray());
+    }
+
     private async Task<MaterializedMessage?> LoadMaterializedMessageAsync(
         Guid conversationId,
         Guid messageId,
@@ -837,12 +927,18 @@ public sealed class ConversationService(
                 .OrderByDescending(candidate => candidate.CreatedWatermark)
                 .ToArray();
 
+        var attachmentLookup = await LoadAttachmentLookupAsync(materializedMessages.Select(candidate => candidate.MessageId), cancellationToken);
+
         var latestMessage = materializedMessages.FirstOrDefault();
         var preview = latestMessage is null
             ? null
             : latestMessage.IsDeleted
                 ? "Message deleted"
-                : latestMessage.Text;
+                : string.IsNullOrWhiteSpace(latestMessage.Text)
+                    ? attachmentLookup.TryGetValue(latestMessage.MessageId, out var attachments) && attachments.Count > 0
+                        ? $"Attachment: {attachments[0].OriginalFileName}"
+                        : null
+                    : latestMessage.Text;
 
         return new DirectConversationSummaryResponse(
             conversation.Id,
@@ -898,7 +994,8 @@ public sealed class ConversationService(
         Guid currentUserId,
         ConversationAccessDescriptor access,
         IReadOnlyDictionary<Guid, UserLookup> userLookup,
-        IReadOnlyDictionary<Guid, MaterializedMessage> replyLookup)
+        IReadOnlyDictionary<Guid, MaterializedMessage> replyLookup,
+        IReadOnlyDictionary<Guid, IReadOnlyList<MessageAttachmentResponse>> attachmentLookup)
     {
         ReplyPreviewResponse? replyPreview = null;
         if (message.ReplyToMessageId is { } replyToMessageId &&
@@ -915,6 +1012,9 @@ public sealed class ConversationService(
         var canEdit = access.CanWrite && !message.IsDeleted && message.AuthorUserId == currentUserId;
         var canDelete = !message.IsDeleted &&
             ((message.AuthorUserId == currentUserId && access.CanWrite) || access.CanDeleteAnyMessage);
+        var attachments = attachmentLookup.TryGetValue(message.MessageId, out var currentAttachments)
+            ? currentAttachments
+            : Array.Empty<MessageAttachmentResponse>();
 
         return new ChatMessageResponse(
             message.MessageId,
@@ -932,7 +1032,20 @@ public sealed class ConversationService(
             message.IsEdited,
             message.IsDeleted,
             canEdit,
-            canDelete);
+            canDelete,
+            attachments);
+    }
+
+    private static MessageAttachmentResponse MapAttachment(MessageAttachment attachment)
+    {
+        return new MessageAttachmentResponse(
+            attachment.Id,
+            attachment.OriginalFileName,
+            attachment.ContentType,
+            attachment.ByteSize,
+            attachment.UploadedByUserId,
+            attachment.CreatedAtUtc,
+            $"/api/attachments/{attachment.Id:D}/download");
     }
 
     private static DirectRelationship ResolveDirectRelationship(
@@ -1154,3 +1267,12 @@ internal sealed class ContactServiceResult<T>
 }
 
 internal sealed record ContactServiceError(string Code, string Message, int StatusCode);
+
+public sealed record ConversationAccessGrant(
+    Guid ConversationId,
+    string ConversationKind,
+    Guid? RoomId,
+    Guid? OtherUserId,
+    string AccessMode,
+    bool CanWrite,
+    bool CanDeleteAnyMessage);

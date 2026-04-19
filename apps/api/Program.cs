@@ -1,3 +1,4 @@
+using SlackApp.Modules.Attachments.Extensions;
 using SlackApp.Modules.Contacts.Extensions;
 using SlackApp.Modules.Identity.Extensions;
 using SlackApp.Modules.Messaging.Extensions;
@@ -26,6 +27,7 @@ builder.Services.AddSessionsModule();
 builder.Services.AddContactsModule();
 builder.Services.AddPresenceModule(builder.Configuration);
 builder.Services.AddMessagingModule();
+builder.Services.AddAttachmentsModule();
 builder.Services.AddRoomsModule();
 
 var app = builder.Build();
@@ -85,6 +87,7 @@ app.MapSessionsModule();
 app.MapContactsModule();
 app.MapPresenceModule();
 app.MapMessagingModule();
+app.MapAttachmentsModule();
 app.MapRoomsModule();
 
 app.Run();

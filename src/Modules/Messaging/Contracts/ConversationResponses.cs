@@ -21,6 +21,15 @@ public sealed record ReplyPreviewResponse(
     string? Text,
     bool IsDeleted);
 
+public sealed record MessageAttachmentResponse(
+    Guid Id,
+    string OriginalFileName,
+    string ContentType,
+    long ByteSize,
+    Guid UploadedByUserId,
+    DateTimeOffset CreatedAtUtc,
+    string DownloadPath);
+
 public sealed record ChatMessageResponse(
     Guid MessageId,
     Guid ConversationId,
@@ -37,7 +46,8 @@ public sealed record ChatMessageResponse(
     bool IsEdited,
     bool IsDeleted,
     bool CanEdit,
-    bool CanDelete);
+    bool CanDelete,
+    IReadOnlyList<MessageAttachmentResponse> Attachments);
 
 public sealed record ConversationTimelineResponse(
     Guid ConversationId,

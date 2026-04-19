@@ -178,6 +178,16 @@ export type ReplyPreviewResponse = {
   isDeleted: boolean;
 };
 
+export type MessageAttachmentResponse = {
+  id: string;
+  originalFileName: string;
+  contentType: string;
+  byteSize: number;
+  uploadedByUserId: string;
+  createdAtUtc: string;
+  downloadPath: string;
+};
+
 export type ChatMessageResponse = {
   messageId: string;
   conversationId: string;
@@ -195,6 +205,7 @@ export type ChatMessageResponse = {
   isDeleted: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  attachments: MessageAttachmentResponse[];
 };
 
 export type ConversationTimelineResponse = {

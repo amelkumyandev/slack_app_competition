@@ -12,13 +12,14 @@ import {
   type CurrentUserResponse,
   type DirectConversationListResponse,
   type DirectConversationSummaryResponse,
+  type MessageAttachmentResponse,
   type MessageResponse,
   type RealtimeContractResponse,
   type RealtimeEnvelope,
   type RoomDirectoryResponse,
   type RoomListItemResponse,
 } from "@/lib/api/contracts";
-import { ApiClientError, apiRequest, signalrUrl } from "@/lib/api/client";
+import { ApiClientError, apiBaseUrl, apiRequest, signalrUrl } from "@/lib/api/client";
 
 type WorkspaceStatus = "loading" | "ready" | "auth" | "error";
 type RealtimeStatus = "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
@@ -78,12 +79,15 @@ export function ChatWorkspace() {
     error: null,
   });
   const [draftText, setDraftText] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [replyTarget, setReplyTarget] = useState<ChatMessageResponse | null>(null);
   const [editTarget, setEditTarget] = useState<ChatMessageResponse | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [messageSubmitting, setMessageSubmitting] = useState(false);
+  const [downloadTargetId, setDownloadTargetId] = useState<string | null>(null);
   const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null);
   const [openingDirectUserName, setOpeningDirectUserName] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -268,6 +272,8 @@ export function ChatWorkspace() {
 
     setReplyTarget(null);
     setEditTarget(null);
+    setSelectedFile(null);
+    setFileInputKey((current) => current + 1);
     shouldScrollToBottomRef.current = true;
     void loadTimeline(selectedConversation.conversationId, { replace: true });
     void syncConversationSubscription(selectedConversation.conversationId);
@@ -554,6 +560,20 @@ export function ChatWorkspace() {
         );
 
         setFeedbackMessage("Message updated.");
+      } else if (selectedFile) {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        if (draftText.trim()) {
+          formData.append("comment", draftText);
+        }
+
+        await apiRequest<ChatMessageResponse>(`/api/conversations/${selectedConversation.conversationId}/attachments`, {
+          method: "POST",
+          body: formData,
+        });
+
+        setFeedbackMessage("Attachment uploaded.");
       } else {
         await apiRequest<ChatMessageResponse>(`/api/conversations/${selectedConversation.conversationId}/messages`, {
           method: "POST",
@@ -567,6 +587,8 @@ export function ChatWorkspace() {
       }
 
       setDraftText("");
+      setSelectedFile(null);
+      setFileInputKey((current) => current + 1);
       setReplyTarget(null);
       setEditTarget(null);
       shouldScrollToBottomRef.current = true;
@@ -604,6 +626,36 @@ export function ChatWorkspace() {
       await refreshNavigationData();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "The message could not be deleted."));
+    }
+  }
+
+  async function handleDownloadAttachment(attachment: MessageAttachmentResponse) {
+    setDownloadTargetId(attachment.id);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}${attachment.downloadPath}`, {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("The attachment download could not be completed.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = attachment.originalFileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "The attachment download could not be completed."));
+    } finally {
+      setDownloadTargetId(null);
     }
   }
 
@@ -960,6 +1012,29 @@ export function ChatWorkspace() {
                               {message.isDeleted ? "Message deleted." : message.text}
                             </div>
 
+                            {!message.isDeleted && message.attachments.length > 0 ? (
+                              <div className="attachment-list">
+                                {message.attachments.map((attachment) => (
+                                  <div className="attachment-card" key={attachment.id}>
+                                    <div>
+                                      <strong>{attachment.originalFileName}</strong>
+                                      <span>
+                                        {formatBytes(attachment.byteSize)} · {attachment.contentType}
+                                      </span>
+                                    </div>
+                                    <button
+                                      className="secondary-button attachment-action"
+                                      disabled={downloadTargetId === attachment.id}
+                                      onClick={() => void handleDownloadAttachment(attachment)}
+                                      type="button"
+                                    >
+                                      {downloadTargetId === attachment.id ? "Downloading..." : "Download"}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+
                             <div className="chat-message-actions">
                               {!message.isDeleted ? (
                                 <button
@@ -980,6 +1055,8 @@ export function ChatWorkspace() {
                                   onClick={() => {
                                     setReplyTarget(null);
                                     setEditTarget(message);
+                                    setSelectedFile(null);
+                                    setFileInputKey((current) => current + 1);
                                     setDraftText(message.text ?? "");
                                   }}
                                   type="button"
@@ -1035,6 +1112,24 @@ export function ChatWorkspace() {
                       </div>
                     ) : null}
 
+                    {selectedFile ? (
+                      <div className="composer-banner">
+                        <span>
+                          Uploading <strong>{selectedFile.name}</strong> ({formatBytes(selectedFile.size)})
+                        </span>
+                        <button
+                          className="ghost-link inline-action"
+                          onClick={() => {
+                            setSelectedFile(null);
+                            setFileInputKey((current) => current + 1);
+                          }}
+                          type="button"
+                        >
+                          Clear file
+                        </button>
+                      </div>
+                    ) : null}
+
                     <form className="chat-composer-form" onSubmit={handleSubmitMessage}>
                       <textarea
                         disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting}
@@ -1042,21 +1137,46 @@ export function ChatWorkspace() {
                         placeholder={
                           selectedConversation?.accessMode === "read_only"
                             ? "This conversation is read-only because a ban froze direct messaging."
-                            : "Write a message. Shift+Enter or line breaks are preserved."
+                            : selectedFile
+                              ? "Add an optional attachment comment."
+                              : "Write a message. Shift+Enter or line breaks are preserved."
                         }
                         rows={4}
                         value={draftText}
                       />
+                      <div className="attachment-picker-row">
+                        <label className={editTarget ? "secondary-button disabled-file-picker" : "secondary-button file-picker"}>
+                          <input
+                            accept="image/*,.pdf,.txt,.md,.zip,.json,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                            disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
+                            key={fileInputKey}
+                            onChange={(event) => {
+                              const nextFile = event.target.files?.[0] ?? null;
+                              setSelectedFile(nextFile);
+                            }}
+                            type="file"
+                          />
+                          {selectedFile ? "Replace file" : "Attach file"}
+                        </label>
+                        <span className="panel-copy">
+                          Files are stored on the local uploads volume and re-checked against room or direct-message access on every download.
+                        </span>
+                      </div>
                       <div className="chat-composer-actions">
                         <span className="panel-copy">
                           Timeline rendering is windowed so the DOM stays bounded even when history scales far past the visible slice.
                         </span>
                         <button
                           className="primary-button"
-                          disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !draftText.trim()}
+                          disabled={
+                            !selectedConversation ||
+                            selectedConversation.accessMode === "read_only" ||
+                            messageSubmitting ||
+                            (!selectedFile && !draftText.trim())
+                          }
                           type="submit"
                         >
-                          {messageSubmitting ? "Saving..." : editTarget ? "Save edit" : "Send message"}
+                          {messageSubmitting ? "Saving..." : editTarget ? "Save edit" : selectedFile ? "Upload file" : "Send message"}
                         </button>
                       </div>
                     </form>
@@ -1261,6 +1381,18 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function isUnauthorized(error: unknown) {

@@ -12,6 +12,9 @@ namespace SlackApp.Api.IntegrationTests;
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string sqliteDatabasePath = Path.Combine(Path.GetTempPath(), $"slackapp-auth-tests-{Guid.NewGuid():N}.db");
+    private readonly string uploadsRootPath = Path.Combine(Path.GetTempPath(), $"slackapp-upload-tests-{Guid.NewGuid():N}");
+
+    public string UploadsRootPath => uploadsRootPath;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -27,7 +30,9 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Presence:HeartbeatIntervalSeconds"] = "1",
                 ["Presence:HeartbeatTtlSeconds"] = "3",
                 ["Presence:AfkThresholdSeconds"] = "1",
-                ["Presence:SweepIntervalSeconds"] = "1"
+                ["Presence:SweepIntervalSeconds"] = "1",
+                ["Storage:UploadsRoot"] = uploadsRootPath,
+                ["Storage:MaxUploadBytes"] = "65536"
             });
         });
 
@@ -80,6 +85,18 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 catch (IOException)
                 {
                     // The temp database is best-effort cleanup only.
+                }
+            }
+
+            if (Directory.Exists(uploadsRootPath))
+            {
+                try
+                {
+                    Directory.Delete(uploadsRootPath, recursive: true);
+                }
+                catch (IOException)
+                {
+                    // The temp uploads directory is best-effort cleanup only.
                 }
             }
         }

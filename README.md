@@ -14,6 +14,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/presence-heartbeats-and-hibernation` adds per-tab presence heartbeats, aggregate online/AFK/offline inference, Redis-backed Docker storage with in-memory test fallback, and a live `/presence` workspace.
 - `feat/conversation-watermarks-and-gap-recovery` adds durable room-backed conversations, monotonic watermarks, conversation history paging, and REST sync repair for missed realtime events.
 - `feat/messaging-core-and-history` adds durable room and direct messages, multiline text, replies, edit/delete flows, room-admin delete permissions, direct-message read-only freeze after bans, and a live `/chat` workspace with windowed history rendering.
+- `feat/attachments-and-secure-downloads` adds filesystem-backed uploads, secure attachment downloads, room-delete cleanup, and chat composer support for file sharing with optional comments.
 
 ## Planned Stack
 
@@ -218,10 +219,12 @@ The messaging slice now exposes:
 - `GET /api/conversations/{conversationId}/messages?beforeWatermark={n}&pageSize={k}`
 - `GET /api/conversations/{conversationId}/sync?afterWatermark={n}`
 - `POST /api/conversations/{conversationId}/messages`
+- `POST /api/conversations/{conversationId}/attachments`
 - `POST /api/conversations/{conversationId}/messages/{messageId}/edit`
 - `DELETE /api/conversations/{conversationId}/messages/{messageId}`
 - `GET /api/conversations/direct`
 - `POST /api/conversations/direct`
+- `GET /api/attachments/{attachmentId}/download`
 
 Current conversation guarantees:
 
@@ -238,8 +241,18 @@ The web app now includes a focused `/chat` route that can:
 - start direct messages from confirmed friends
 - page older history progressively
 - send multiline messages with reply targets
+- upload files with optional message text
+- download attachments from message history
 - edit or delete messages when policy allows
 - reconnect SignalR, detect watermark gaps, and trigger REST sync repair
+
+Current attachment guarantees:
+
+- uploads are stored on the mounted local filesystem volume rather than in the database
+- attachment metadata is materialized directly into conversation history and sync responses
+- downloads re-check room or direct-message access on every request
+- removing a user from a room immediately blocks future attachment downloads for that room
+- deleting a room removes its attachment files permanently along with the conversation
 
 ## Current Presence Contract
 
