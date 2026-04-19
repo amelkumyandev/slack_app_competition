@@ -15,6 +15,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/conversation-watermarks-and-gap-recovery` adds durable room-backed conversations, monotonic watermarks, conversation history paging, and REST sync repair for missed realtime events.
 - `feat/messaging-core-and-history` adds durable room and direct messages, multiline text, replies, edit/delete flows, room-admin delete permissions, direct-message read-only freeze after bans, and a live `/chat` workspace with windowed history rendering.
 - `feat/attachments-and-secure-downloads` adds filesystem-backed uploads, secure attachment downloads, room-delete cleanup, and chat composer support for file sharing with optional comments.
+- `feat/unread-and-chat-navigation` adds per-user conversation read watermarks, unread counters for rooms and directs, and live chat navigation pills that clear as conversations are opened.
 
 ## Planned Stack
 
@@ -220,6 +221,7 @@ The messaging slice now exposes:
 - `GET /api/conversations/{conversationId}/sync?afterWatermark={n}`
 - `POST /api/conversations/{conversationId}/messages`
 - `POST /api/conversations/{conversationId}/attachments`
+- `POST /api/conversations/{conversationId}/read-state`
 - `POST /api/conversations/{conversationId}/messages/{messageId}/edit`
 - `DELETE /api/conversations/{conversationId}/messages/{messageId}`
 - `GET /api/conversations/direct`
@@ -230,16 +232,19 @@ Current conversation guarantees:
 
 - each room or direct dialog owns a durable `conversationId`
 - room and direct messages are persisted into `conversation_messages` with monotonic per-conversation watermarks
+- each user can advance an independent read watermark per conversation without affecting other members
 - history pages return materialized chat messages in chronological order, including reply previews and edited/deleted state
 - direct conversations respect friendship and ban policy, including read-only history after a ban
 - missed realtime windows can be repaired through REST without any unbounded per-user queue
-- history paging is stable by message creation watermark, and the `/chat` workspace keeps the DOM bounded with windowed rendering for long histories
+- history paging is stable by message creation watermark, unread counts are derived from durable read state plus authored message watermarks, and the `/chat` workspace keeps the DOM bounded with windowed rendering for long histories
 
 The web app now includes a focused `/chat` route that can:
 
 - open room or direct conversations
 - start direct messages from confirmed friends
+- show unread pills for rooms and direct conversations
 - page older history progressively
+- clear unread counts by advancing the conversation read watermark when a chat is opened
 - send multiline messages with reply targets
 - upload files with optional message text
 - download attachments from message history

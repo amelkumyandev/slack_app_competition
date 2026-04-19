@@ -115,6 +115,11 @@ export type RoomListItemResponse = {
   isAdmin: boolean;
   isMember: boolean;
   memberCount: number;
+  latestWatermark: number;
+  lastReadWatermark: number;
+  unreadCount: number;
+  lastMessagePreview: string | null;
+  lastMessageAtUtc: string | null;
   isBanned: boolean;
 };
 
@@ -237,12 +242,24 @@ export type ConversationSyncResponse = {
   missingMessages: ConversationEventResponse[];
 };
 
+export type UpdateConversationReadStateRequest = {
+  watermark: number | null;
+};
+
+export type ConversationReadStateResponse = {
+  conversationId: string;
+  lastReadWatermark: number;
+  unreadCount: number;
+};
+
 export type DirectConversationSummaryResponse = {
   conversationId: string;
   targetUserId: string;
   targetUserName: string;
   accessMode: "read_only" | "read_write" | "none";
   latestWatermark: number;
+  lastReadWatermark: number;
+  unreadCount: number;
   messageCount: number;
   lastMessagePreview: string | null;
   lastMessageAtUtc: string | null;

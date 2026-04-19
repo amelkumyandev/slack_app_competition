@@ -10,6 +10,11 @@ public sealed record RoomListItemResponse(
     bool IsAdmin,
     bool IsMember,
     int MemberCount,
+    long LatestWatermark,
+    long LastReadWatermark,
+    int UnreadCount,
+    string? LastMessagePreview,
+    DateTimeOffset? LastMessageAtUtc,
     bool IsBanned);
 
 public sealed record RoomInvitationResponse(

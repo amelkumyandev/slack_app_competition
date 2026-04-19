@@ -23,6 +23,8 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
 
+    public DbSet<ConversationReadState> ConversationReadStates => Set<ConversationReadState>();
+
     public DbSet<MessageAttachment> MessageAttachments => Set<MessageAttachment>();
 
     public DbSet<RoomMember> RoomMembers => Set<RoomMember>();
@@ -159,6 +161,20 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             .OnDelete(DeleteBehavior.SetNull);
         conversationMessages.HasIndex(message => new { message.ConversationId, message.MessageId });
         conversationMessages.HasIndex(message => new { message.ConversationId, message.Watermark }).IsUnique();
+
+        var conversationReadStates = modelBuilder.Entity<ConversationReadState>();
+        conversationReadStates.ToTable("conversation_read_states");
+        conversationReadStates.HasKey(state => state.Id);
+        conversationReadStates.HasOne<Conversation>()
+            .WithMany()
+            .HasForeignKey(state => state.ConversationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        conversationReadStates.HasOne<UserAccount>()
+            .WithMany()
+            .HasForeignKey(state => state.UserAccountId)
+            .OnDelete(DeleteBehavior.Cascade);
+        conversationReadStates.HasIndex(state => new { state.ConversationId, state.UserAccountId }).IsUnique();
+        conversationReadStates.HasIndex(state => new { state.UserAccountId, state.UpdatedAtUtc });
 
         var messageAttachments = modelBuilder.Entity<MessageAttachment>();
         messageAttachments.ToTable("message_attachments");

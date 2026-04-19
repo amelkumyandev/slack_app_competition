@@ -498,6 +498,13 @@ a {
     background-color 150ms ease;
 }
 
+.nav-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .nav-card strong,
 .catalog-card strong {
   display: block;
@@ -519,6 +526,24 @@ a {
 
 .nav-card.active span {
   color: rgba(247, 250, 252, 0.78);
+}
+
+.nav-unread-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.85rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(217, 97, 59, 0.16);
+  color: #8a2f16;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.nav-card.active .nav-unread-pill {
+  background: rgba(255, 255, 255, 0.18);
+  color: #f7fafc;
 }
 
 .nav-card:hover {

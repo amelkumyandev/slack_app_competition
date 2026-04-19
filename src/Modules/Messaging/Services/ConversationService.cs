@@ -196,6 +196,125 @@ public sealed class ConversationService(
             messages.Select(MapEvent).ToArray()));
     }
 
+    public async Task<ConversationQueryResult<ConversationReadStateResponse>> MarkConversationReadAsync(
+        Guid userId,
+        Guid conversationId,
+        long? watermark,
+        CancellationToken cancellationToken)
+    {
+        var access = await AuthorizeConversationAccessAsync(userId, conversationId, requireWrite: false, cancellationToken);
+        if (!access.Succeeded)
+        {
+            return ConversationQueryResult<ConversationReadStateResponse>.Failure(
+                access.ErrorCode!,
+                access.ErrorMessage!,
+                access.StatusCode);
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var targetWatermark = Math.Clamp(watermark ?? access.Conversation!.CurrentWatermark, 0, access.Conversation!.CurrentWatermark);
+        var readState = await dbContext.ConversationReadStates
+            .SingleOrDefaultAsync(
+                candidate => candidate.ConversationId == conversationId && candidate.UserAccountId == userId,
+                cancellationToken);
+
+        if (readState is null)
+        {
+            readState = new ConversationReadState
+            {
+                ConversationId = conversationId,
+                UserAccountId = userId,
+                LastReadWatermark = targetWatermark,
+                UpdatedAtUtc = now
+            };
+
+            dbContext.ConversationReadStates.Add(readState);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        else if (targetWatermark > readState.LastReadWatermark)
+        {
+            readState.LastReadWatermark = targetWatermark;
+            readState.UpdatedAtUtc = now;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        var unreadCount = await CountUnreadMessagesAsync(userId, conversationId, readState.LastReadWatermark, cancellationToken);
+        return ConversationQueryResult<ConversationReadStateResponse>.Success(new ConversationReadStateResponse(
+            conversationId,
+            readState.LastReadWatermark,
+            unreadCount));
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, ConversationSummarySnapshot>> GetConversationSummaryLookupAsync(
+        Guid userId,
+        IEnumerable<Guid> conversationIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = conversationIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new Dictionary<Guid, ConversationSummarySnapshot>();
+        }
+
+        var conversations = await dbContext.Conversations
+            .Where(candidate => ids.Contains(candidate.Id))
+            .ToDictionaryAsync(candidate => candidate.Id, cancellationToken);
+
+        var readStateLookup = await dbContext.ConversationReadStates
+            .Where(candidate => candidate.UserAccountId == userId && ids.Contains(candidate.ConversationId))
+            .ToDictionaryAsync(candidate => candidate.ConversationId, cancellationToken);
+
+        var events = await dbContext.ConversationMessages
+            .Where(candidate => ids.Contains(candidate.ConversationId) && candidate.MessageId != null)
+            .OrderBy(candidate => candidate.Watermark)
+            .ToListAsync(cancellationToken);
+
+        var materializedLookup = events
+            .GroupBy(candidate => candidate.ConversationId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .GroupBy(candidate => candidate.MessageId!.Value)
+                    .Select(MaterializeMessage)
+                    .OrderByDescending(candidate => candidate.CreatedWatermark)
+                    .ToArray());
+
+        var latestMessageIds = materializedLookup.Values
+            .Select(candidate => candidate.FirstOrDefault()?.MessageId)
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!.Value)
+            .ToArray();
+
+        var attachmentLookup = await LoadAttachmentLookupAsync(latestMessageIds, cancellationToken);
+        var snapshots = new Dictionary<Guid, ConversationSummarySnapshot>(ids.Length);
+
+        foreach (var conversationId in ids)
+        {
+            conversations.TryGetValue(conversationId, out var conversation);
+            materializedLookup.TryGetValue(conversationId, out var materializedMessages);
+            materializedMessages ??= Array.Empty<MaterializedMessage>();
+
+            var latestMessage = materializedMessages.FirstOrDefault();
+            var latestWatermark = conversation?.CurrentWatermark ?? 0;
+            var lastReadWatermark = readStateLookup.TryGetValue(conversationId, out var readState)
+                ? Math.Min(readState.LastReadWatermark, latestWatermark)
+                : 0;
+            var unreadCount = materializedMessages.Count(candidate =>
+                candidate.AuthorUserId != userId &&
+                candidate.CreatedWatermark > lastReadWatermark);
+
+            snapshots[conversationId] = new ConversationSummarySnapshot(
+                latestWatermark,
+                lastReadWatermark,
+                unreadCount,
+                materializedMessages.Length,
+                BuildPreviewText(latestMessage, attachmentLookup),
+                latestMessage?.CreatedAtUtc);
+        }
+
+        return snapshots;
+    }
+
     public async Task<ConversationQueryResult<DirectConversationListResponse>> GetDirectConversationsAsync(
         Guid userId,
         CancellationToken cancellationToken)
@@ -221,8 +340,9 @@ public sealed class ConversationService(
         var userLookup = await LoadUserLookupAsync(otherUserIds, cancellationToken);
         var friendshipPairs = await LoadFriendshipPairsAsync(userId, otherUserIds, cancellationToken);
         var banPairs = await LoadBanPairsAsync(userId, otherUserIds, cancellationToken);
+        var readableConversationIds = new List<Guid>();
+        var relationshipLookup = new Dictionary<Guid, (Guid OtherUserId, string UserName, string AccessMode)>();
 
-        var summaries = new List<DirectConversationSummaryResponse>();
         foreach (var conversation in conversations)
         {
             var otherUserId = conversation.DirectFirstUserId == userId
@@ -235,13 +355,34 @@ public sealed class ConversationService(
                 continue;
             }
 
-            summaries.Add(await BuildDirectConversationSummaryAsync(
-                userId,
-                conversation,
+            readableConversationIds.Add(conversation.Id);
+            relationshipLookup[conversation.Id] = (
                 otherUserId,
                 ResolveUserName(otherUserId, userLookup),
+                relationship.AccessMode);
+        }
+
+        var snapshotLookup = await GetConversationSummaryLookupAsync(userId, readableConversationIds, cancellationToken);
+        var summaries = new List<DirectConversationSummaryResponse>(readableConversationIds.Count);
+
+        foreach (var conversationId in readableConversationIds)
+        {
+            var relationship = relationshipLookup[conversationId];
+            var snapshot = snapshotLookup.TryGetValue(conversationId, out var summarySnapshot)
+                ? summarySnapshot
+                : ConversationSummarySnapshot.Empty;
+
+            summaries.Add(new DirectConversationSummaryResponse(
+                conversationId,
+                relationship.OtherUserId,
+                relationship.UserName,
                 relationship.AccessMode,
-                cancellationToken));
+                snapshot.LatestWatermark,
+                snapshot.LastReadWatermark,
+                snapshot.UnreadCount,
+                snapshot.MessageCount,
+                snapshot.LastMessagePreview,
+                snapshot.LastMessageAtUtc));
         }
 
         return ConversationQueryResult<DirectConversationListResponse>.Success(new DirectConversationListResponse(
@@ -799,6 +940,22 @@ public sealed class ConversationService(
                     .ToArray());
     }
 
+    private async Task<int> CountUnreadMessagesAsync(
+        Guid userId,
+        Guid conversationId,
+        long lastReadWatermark,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.ConversationMessages.CountAsync(
+            candidate =>
+                candidate.ConversationId == conversationId &&
+                candidate.EventType == MessagingEventTypes.MessageCreated &&
+                candidate.MessageId != null &&
+                candidate.ActorUserId != userId &&
+                candidate.Watermark > lastReadWatermark,
+            cancellationToken);
+    }
+
     private async Task<MaterializedMessage?> LoadMaterializedMessageAsync(
         Guid conversationId,
         Guid messageId,
@@ -915,40 +1072,20 @@ public sealed class ConversationService(
         string accessMode,
         CancellationToken cancellationToken)
     {
-        var events = await dbContext.ConversationMessages
-            .Where(candidate => candidate.ConversationId == conversation.Id && candidate.MessageId != null)
-            .OrderBy(candidate => candidate.Watermark)
-            .ToListAsync(cancellationToken);
-
-        var materializedMessages = events.Count == 0
-            ? Array.Empty<MaterializedMessage>()
-            : events.GroupBy(candidate => candidate.MessageId!.Value)
-                .Select(MaterializeMessage)
-                .OrderByDescending(candidate => candidate.CreatedWatermark)
-                .ToArray();
-
-        var attachmentLookup = await LoadAttachmentLookupAsync(materializedMessages.Select(candidate => candidate.MessageId), cancellationToken);
-
-        var latestMessage = materializedMessages.FirstOrDefault();
-        var preview = latestMessage is null
-            ? null
-            : latestMessage.IsDeleted
-                ? "Message deleted"
-                : string.IsNullOrWhiteSpace(latestMessage.Text)
-                    ? attachmentLookup.TryGetValue(latestMessage.MessageId, out var attachments) && attachments.Count > 0
-                        ? $"Attachment: {attachments[0].OriginalFileName}"
-                        : null
-                    : latestMessage.Text;
+        var summary = (await GetConversationSummaryLookupAsync(currentUserId, [conversation.Id], cancellationToken))
+            .GetValueOrDefault(conversation.Id, ConversationSummarySnapshot.Empty);
 
         return new DirectConversationSummaryResponse(
             conversation.Id,
             otherUserId,
             otherUserName,
             accessMode,
-            conversation.CurrentWatermark,
-            materializedMessages.Length,
-            preview,
-            latestMessage?.CreatedAtUtc);
+            summary.LatestWatermark,
+            summary.LastReadWatermark,
+            summary.UnreadCount,
+            summary.MessageCount,
+            summary.LastMessagePreview,
+            summary.LastMessageAtUtc);
     }
 
     private static ConversationEventResponse MapEvent(ConversationMessage message)
@@ -1046,6 +1183,30 @@ public sealed class ConversationService(
             attachment.UploadedByUserId,
             attachment.CreatedAtUtc,
             $"/api/attachments/{attachment.Id:D}/download");
+    }
+
+    private static string? BuildPreviewText(
+        MaterializedMessage? latestMessage,
+        IReadOnlyDictionary<Guid, IReadOnlyList<MessageAttachmentResponse>> attachmentLookup)
+    {
+        if (latestMessage is null)
+        {
+            return null;
+        }
+
+        if (latestMessage.IsDeleted)
+        {
+            return "Message deleted";
+        }
+
+        if (!string.IsNullOrWhiteSpace(latestMessage.Text))
+        {
+            return latestMessage.Text;
+        }
+
+        return attachmentLookup.TryGetValue(latestMessage.MessageId, out var attachments) && attachments.Count > 0
+            ? $"Attachment: {attachments[0].OriginalFileName}"
+            : null;
     }
 
     private static DirectRelationship ResolveDirectRelationship(
@@ -1276,3 +1437,14 @@ public sealed record ConversationAccessGrant(
     string AccessMode,
     bool CanWrite,
     bool CanDeleteAnyMessage);
+
+public sealed record ConversationSummarySnapshot(
+    long LatestWatermark,
+    long LastReadWatermark,
+    int UnreadCount,
+    int MessageCount,
+    string? LastMessagePreview,
+    DateTimeOffset? LastMessageAtUtc)
+{
+    public static ConversationSummarySnapshot Empty { get; } = new(0, 0, 0, 0, null, null);
+}

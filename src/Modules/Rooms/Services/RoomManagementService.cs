@@ -49,18 +49,22 @@ public sealed partial class RoomManagementService(
         var bannedRoomIds = roomBans
             .Select(candidate => candidate.RoomId)
             .ToHashSet();
+        var conversationSummaryLookup = await conversationService.GetConversationSummaryLookupAsync(
+            userId,
+            rooms.Select(candidate => candidate.ConversationId),
+            cancellationToken);
 
         var myRooms = rooms
             .Where(candidate => candidate.OwnerUserId == userId || memberRoomIds.Contains(candidate.Id))
             .OrderBy(candidate => candidate.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(candidate => MapRoom(candidate, userId, memberCountLookup, memberRoomIds, adminRoomIds, bannedRoomIds))
+            .Select(candidate => MapRoom(candidate, userId, memberCountLookup, memberRoomIds, adminRoomIds, bannedRoomIds, conversationSummaryLookup))
             .ToArray();
 
         var publicCatalog = rooms
             .Where(candidate => candidate.Visibility == RoomVisibility.Public)
             .Where(candidate => normalizedSearch is null || MatchesSearch(candidate, normalizedSearch))
             .OrderBy(candidate => candidate.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(candidate => MapRoom(candidate, userId, memberCountLookup, memberRoomIds, adminRoomIds, bannedRoomIds))
+            .Select(candidate => MapRoom(candidate, userId, memberCountLookup, memberRoomIds, adminRoomIds, bannedRoomIds, conversationSummaryLookup))
             .ToArray();
 
         var pendingInvitationRoomIds = pendingInvitations.Select(candidate => candidate.RoomId).Distinct().ToArray();
@@ -135,6 +139,10 @@ public sealed partial class RoomManagementService(
 
         var currentUserAdminRoomIds = aggregate.Admins.Where(candidate => candidate.UserId == userId).Select(candidate => candidate.RoomId).ToHashSet();
         var bannedRoomIds = aggregate.Bans.Where(candidate => candidate.UserId == userId).Select(candidate => candidate.RoomId).ToHashSet();
+        var conversationSummaryLookup = await conversationService.GetConversationSummaryLookupAsync(
+            userId,
+            [aggregate.Room.ConversationId],
+            cancellationToken);
 
         var roomResponse = MapRoom(
             aggregate.Room,
@@ -142,7 +150,8 @@ public sealed partial class RoomManagementService(
             memberCountLookup,
             currentUserRoomIds,
             currentUserAdminRoomIds,
-            bannedRoomIds);
+            bannedRoomIds,
+            conversationSummaryLookup);
 
         var permissions = new RoomPermissionsResponse(
             CanJoin: aggregate.Room.Visibility == RoomVisibility.Public && !aggregate.IsMember(userId) && !aggregate.IsBanned(userId),
@@ -303,6 +312,11 @@ public sealed partial class RoomManagementService(
             true,
             true,
             1,
+            0,
+            0,
+            0,
+            null,
+            null,
             false));
     }
 
@@ -1008,11 +1022,15 @@ public sealed partial class RoomManagementService(
         IReadOnlyDictionary<Guid, int> memberCountLookup,
         IReadOnlySet<Guid> currentUserRoomIds,
         IReadOnlySet<Guid> currentUserAdminRoomIds,
-        IReadOnlySet<Guid> bannedRoomIds)
+        IReadOnlySet<Guid> bannedRoomIds,
+        IReadOnlyDictionary<Guid, ConversationSummarySnapshot> conversationSummaryLookup)
     {
         var isOwner = room.OwnerUserId == currentUserId;
         var isMember = isOwner || currentUserRoomIds.Contains(room.Id);
         var isAdmin = isOwner || currentUserAdminRoomIds.Contains(room.Id);
+        var summary = isMember && conversationSummaryLookup.TryGetValue(room.ConversationId, out var snapshot)
+            ? snapshot
+            : ConversationSummarySnapshot.Empty;
 
         return new RoomListItemResponse(
             room.Id,
@@ -1024,6 +1042,11 @@ public sealed partial class RoomManagementService(
             isAdmin,
             isMember,
             memberCountLookup.TryGetValue(room.Id, out var memberCount) ? memberCount : 0,
+            summary.LatestWatermark,
+            summary.LastReadWatermark,
+            summary.UnreadCount,
+            summary.LastMessagePreview,
+            summary.LastMessageAtUtc,
             bannedRoomIds.Contains(room.Id));
     }
 

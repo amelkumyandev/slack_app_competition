@@ -63,12 +63,21 @@ public sealed record ConversationSyncResponse(
     bool RequiresFullRefresh,
     IReadOnlyList<ConversationEventResponse> MissingMessages);
 
+public sealed record UpdateConversationReadStateRequest(long? Watermark);
+
+public sealed record ConversationReadStateResponse(
+    Guid ConversationId,
+    long LastReadWatermark,
+    int UnreadCount);
+
 public sealed record DirectConversationSummaryResponse(
     Guid ConversationId,
     Guid TargetUserId,
     string TargetUserName,
     string AccessMode,
     long LatestWatermark,
+    long LastReadWatermark,
+    int UnreadCount,
     int MessageCount,
     string? LastMessagePreview,
     DateTimeOffset? LastMessageAtUtc);

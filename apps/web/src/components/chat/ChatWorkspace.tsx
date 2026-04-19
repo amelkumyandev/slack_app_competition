@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 import {
   type ChatMessageResponse,
   type ContactSummaryResponse,
+  type ConversationReadStateResponse,
   type ConversationSyncResponse,
   type ConversationTimelineResponse,
   type CurrentUserResponse,
@@ -100,6 +101,7 @@ export function ChatWorkspace() {
   const timelineContainerRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollToBottomRef = useRef(false);
   const loadOlderPendingRef = useRef(false);
+  const selectedConversationId = selectedConversation?.conversationId ?? null;
 
   const totalHeight = timeline.messages.length * estimatedMessageHeight;
   const visibleRange = useMemo(() => {
@@ -140,7 +142,7 @@ export function ChatWorkspace() {
     return () => {
       window.removeEventListener("resize", updateViewportHeight);
     };
-  }, [selectedConversation]);
+  }, [selectedConversation?.conversationId]);
 
   useEffect(() => {
     void loadWorkspace(true);
@@ -256,7 +258,7 @@ export function ChatWorkspace() {
   }, [workspaceStatus]);
 
   useEffect(() => {
-    if (!selectedConversation) {
+    if (!selectedConversationId) {
       setTimeline({
         conversationId: null,
         messages: [],
@@ -275,9 +277,12 @@ export function ChatWorkspace() {
     setSelectedFile(null);
     setFileInputKey((current) => current + 1);
     shouldScrollToBottomRef.current = true;
-    void loadTimeline(selectedConversation.conversationId, { replace: true });
-    void syncConversationSubscription(selectedConversation.conversationId);
-  }, [selectedConversation]);
+    void loadTimeline(selectedConversationId, { replace: true, markRead: true });
+    void syncConversationSubscription(selectedConversationId);
+    // This effect intentionally keys off the selected conversation id.
+    // Summary and unread updates may replace the selection object without switching conversations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConversationId]);
 
   useEffect(() => {
     if (!shouldScrollToBottomRef.current) {
@@ -358,7 +363,86 @@ export function ChatWorkspace() {
     setSelectedConversation((current) => chooseNextSelection(current, rooms, directs.conversations));
   }
 
-  async function loadTimeline(conversationId: string, options: { replace: boolean; beforeWatermark?: number | null } = { replace: true }) {
+  function applyReadState(conversationId: string, readState: ConversationReadStateResponse) {
+    setRoomDirectory((current) =>
+      current
+        ? {
+            ...current,
+            myRooms: current.myRooms.map((room) =>
+              room.conversationId === conversationId
+                ? { ...room, lastReadWatermark: readState.lastReadWatermark, unreadCount: readState.unreadCount }
+                : room,
+            ),
+            publicCatalog: current.publicCatalog.map((room) =>
+              room.conversationId === conversationId
+                ? { ...room, lastReadWatermark: readState.lastReadWatermark, unreadCount: readState.unreadCount }
+                : room,
+            ),
+          }
+        : current,
+    );
+
+    setDirectList((current) =>
+      current.map((conversation) =>
+        conversation.conversationId === conversationId
+          ? {
+              ...conversation,
+              lastReadWatermark: readState.lastReadWatermark,
+              unreadCount: readState.unreadCount,
+            }
+          : conversation,
+      ),
+    );
+  }
+
+  function applyConversationSummary(
+    conversationId: string,
+    latestWatermark: number,
+    lastMessagePreview: string | null,
+    lastMessageAtUtc: string | null,
+  ) {
+    setRoomDirectory((current) =>
+      current
+        ? {
+            ...current,
+            myRooms: current.myRooms.map((room) =>
+              room.conversationId === conversationId
+                ? { ...room, latestWatermark, lastMessagePreview, lastMessageAtUtc }
+                : room,
+            ),
+            publicCatalog: current.publicCatalog.map((room) =>
+              room.conversationId === conversationId
+                ? { ...room, latestWatermark, lastMessagePreview, lastMessageAtUtc }
+                : room,
+            ),
+          }
+        : current,
+    );
+
+    setDirectList((current) =>
+      current.map((conversation) =>
+        conversation.conversationId === conversationId
+          ? { ...conversation, latestWatermark, lastMessagePreview, lastMessageAtUtc }
+          : conversation,
+      ),
+    );
+  }
+
+  async function markConversationRead(conversationId: string, latestWatermark: number) {
+    const readState = await apiRequest<ConversationReadStateResponse>(`/api/conversations/${conversationId}/read-state`, {
+      method: "POST",
+      body: JSON.stringify({
+        watermark: latestWatermark,
+      }),
+    });
+
+    applyReadState(conversationId, readState);
+  }
+
+  async function loadTimeline(
+    conversationId: string,
+    options: { replace: boolean; beforeWatermark?: number | null; markRead?: boolean } = { replace: true },
+  ) {
     setTimeline((current) => ({
       conversationId,
       messages: options.replace ? current.messages : current.messages,
@@ -399,6 +483,19 @@ export function ChatWorkspace() {
       });
 
       latestWatermarkRef.current = response.latestWatermark;
+      if (options.replace) {
+        const latestMessage = response.messages.at(-1) ?? null;
+        applyConversationSummary(
+          response.conversationId,
+          response.latestWatermark,
+          previewForMessage(latestMessage),
+          latestMessage?.createdAtUtc ?? null,
+        );
+      }
+
+      if (options.replace && options.markRead) {
+        await markConversationRead(response.conversationId, response.latestWatermark);
+      }
     } catch (error) {
       setTimeline((current) => ({
         ...current,
@@ -440,7 +537,7 @@ export function ChatWorkspace() {
       );
 
       if (syncResponse.requiresFullRefresh || syncResponse.missingMessages.length > 0) {
-        await loadTimeline(activeConversation.conversationId, { replace: true });
+        await loadTimeline(activeConversation.conversationId, { replace: true, markRead: true });
       } else {
         setTimeline((current) => ({
           ...current,
@@ -592,7 +689,7 @@ export function ChatWorkspace() {
       setReplyTarget(null);
       setEditTarget(null);
       shouldScrollToBottomRef.current = true;
-      await loadTimeline(selectedConversation.conversationId, { replace: true });
+      await loadTimeline(selectedConversation.conversationId, { replace: true, markRead: true });
       await refreshNavigationData();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "The message could not be saved."));
@@ -622,7 +719,7 @@ export function ChatWorkspace() {
       );
 
       setFeedbackMessage("Message deleted.");
-      await loadTimeline(selectedConversation.conversationId, { replace: true });
+      await loadTimeline(selectedConversation.conversationId, { replace: true, markRead: true });
       await refreshNavigationData();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "The message could not be deleted."));
@@ -660,6 +757,9 @@ export function ChatWorkspace() {
   }
 
   const totalUnreadFriendly = (roomDirectory?.pendingInvitations.length ?? 0) + (contactSummary?.incomingFriendRequests.length ?? 0);
+  const totalConversationUnread =
+    (roomDirectory?.myRooms.reduce((count, room) => count + room.unreadCount, 0) ?? 0) +
+    directList.reduce((count, conversation) => count + conversation.unreadCount, 0);
   const selectedConversationLabel = selectedConversation
     ? selectedConversation.kind === "room"
       ? `# ${selectedConversation.title}`
@@ -671,12 +771,13 @@ export function ChatWorkspace() {
       <div className="chat-shell">
         <section className="chat-hero">
           <div>
-            <span className="eyebrow">F10 Messaging Core</span>
-            <h1>Durable room and direct chat with replies, edits, deletes, and realtime gap repair.</h1>
+            <span className="eyebrow">F12 Unread Navigation</span>
+            <h1>Unread-aware chat navigation with durable read watermarks and live conversation summaries.</h1>
             <p>
               This workspace sits directly on top of the conversation watermark foundation. REST
-              handles durable history and pagination, SignalR carries live conversation events, and
-              the client falls back to sync repair whenever a watermark gap appears.
+              handles durable history, read-state updates, and pagination, SignalR carries live
+              conversation events, and the client keeps room and direct summaries fresh while
+              clearing unread counts as conversations are opened.
             </p>
           </div>
 
@@ -706,6 +807,10 @@ export function ChatWorkspace() {
           <div className="status-pill">
             <span className="status-label">Realtime</span>
             <strong>{labelForRealtimeState(realtimeStatus)}</strong>
+          </div>
+          <div className="status-pill">
+            <span className="status-label">Unread items</span>
+            <strong>{totalConversationUnread}</strong>
           </div>
           <div className="status-pill">
             <span className="status-label">Sync posture</span>
@@ -786,6 +891,8 @@ export function ChatWorkspace() {
                 <h2>{currentUser?.userName}</h2>
                 <p className="panel-copy">
                   Invitations plus incoming friend requests: <strong>{totalUnreadFriendly}</strong>
+                  {" · "}
+                  Conversation unread total: <strong>{totalConversationUnread}</strong>
                 </p>
               </div>
 
@@ -809,8 +916,11 @@ export function ChatWorkspace() {
                           onClick={() => setSelectedConversation(toRoomSelection(room))}
                           type="button"
                         >
-                          <strong># {room.name}</strong>
-                          <span>{room.memberCount} members</span>
+                          <div className="nav-card-header">
+                            <strong># {room.name}</strong>
+                            {room.unreadCount > 0 ? <span className="nav-unread-pill">{room.unreadCount}</span> : null}
+                          </div>
+                          <span>{room.lastMessagePreview ?? `${room.memberCount} members`}</span>
                         </button>
                       );
                     })}
@@ -843,7 +953,10 @@ export function ChatWorkspace() {
                           onClick={() => setSelectedConversation(toDirectSelection(conversation))}
                           type="button"
                         >
-                          <strong>{conversation.targetUserName}</strong>
+                          <div className="nav-card-header">
+                            <strong>{conversation.targetUserName}</strong>
+                            {conversation.unreadCount > 0 ? <span className="nav-unread-pill">{conversation.unreadCount}</span> : null}
+                          </div>
                           <span>
                             {conversation.accessMode === "read_only" ? "Read-only history" : conversation.lastMessagePreview ?? "Ready to chat"}
                           </span>
@@ -1323,7 +1436,10 @@ function toRoomSelection(room: RoomListItemResponse): SelectedConversation {
     conversationId: room.conversationId,
     roomId: room.id,
     title: room.name,
-    subtitle: room.description ?? `${room.memberCount} members in this ${room.isPrivate ? "private" : "public"} room.`,
+    subtitle:
+      room.lastMessagePreview ??
+      room.description ??
+      `${room.memberCount} members in this ${room.isPrivate ? "private" : "public"} room.`,
     accessMode: "read_write",
     room,
   };
@@ -1354,6 +1470,22 @@ function mergeOlderMessages(older: ChatMessageResponse[], newer: ChatMessageResp
   }
 
   return Array.from(lookup.values()).sort((left, right) => left.createdWatermark - right.createdWatermark);
+}
+
+function previewForMessage(message: ChatMessageResponse | null) {
+  if (!message) {
+    return null;
+  }
+
+  if (message.isDeleted) {
+    return "Message deleted";
+  }
+
+  if (message.text?.trim()) {
+    return message.text;
+  }
+
+  return message.attachments.length > 0 ? `Attachment: ${message.attachments[0].originalFileName}` : null;
 }
 
 function labelForRealtimeState(state: RealtimeStatus) {

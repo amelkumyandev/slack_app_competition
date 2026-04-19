@@ -132,6 +132,27 @@ public static class MessagingModuleExtensions
             return result.ToResult();
         });
 
+        group.MapPost("/{conversationId:guid}/read-state", async (
+            Guid conversationId,
+            ClaimsPrincipal principal,
+            UpdateConversationReadStateRequest request,
+            ConversationService conversationService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!SessionPrincipalFactory.TryGetIdentifiers(principal, out var userId, out _))
+            {
+                return Results.Unauthorized();
+            }
+
+            var result = await conversationService.MarkConversationReadAsync(
+                userId,
+                conversationId,
+                request.Watermark,
+                cancellationToken);
+
+            return result.ToResult();
+        });
+
         group.MapGet("/direct", async (
             ClaimsPrincipal principal,
             ConversationService conversationService,
