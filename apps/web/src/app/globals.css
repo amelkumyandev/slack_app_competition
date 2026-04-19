@@ -35,8 +35,150 @@ a {
   color: inherit;
 }
 
+.app-frame {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 280px;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.app-sidebar,
+.app-main,
+.app-rail {
+  min-width: 0;
+}
+
+.app-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.app-brand,
+.app-sidebar-card,
+.app-topbar,
+.app-rail-card {
+  padding: 1.2rem 1.25rem;
+  border-radius: 26px;
+  border: 1px solid rgba(18, 32, 51, 0.1);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.app-brand {
+  background:
+    linear-gradient(155deg, rgba(18, 32, 51, 0.96), rgba(13, 140, 125, 0.84)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 14rem);
+  color: #f7fafc;
+}
+
+.app-brand h1,
+.app-topbar h2,
+.app-rail-card h2 {
+  margin: 0.9rem 0 0.55rem;
+  letter-spacing: -0.03em;
+}
+
+.app-brand p,
+.app-topbar p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.app-brand p {
+  color: rgba(247, 250, 252, 0.8);
+}
+
+.app-nav {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.app-nav-item {
+  display: block;
+  padding: 0.9rem 1rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(18, 32, 51, 0.08);
+  text-decoration: none;
+  transition:
+    transform 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.app-nav-item span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.app-nav-item strong {
+  display: block;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.app-nav-item.active {
+  background: rgba(18, 32, 51, 0.92);
+  border-color: transparent;
+  color: #f7fafc;
+}
+
+.app-nav-item.active span {
+  color: rgba(247, 250, 252, 0.72);
+}
+
+.app-nav-item:hover {
+  transform: translateY(-1px);
+}
+
+.app-inline-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+}
+
+.app-main {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.app-topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+
+.app-content {
+  min-width: 0;
+}
+
+.app-rail {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
 .page {
-  padding: 3rem 1.5rem 4rem;
+  padding: 1rem 0 2rem;
 }
 
 .shell {
@@ -274,23 +416,29 @@ a {
 }
 
 .sessions-page {
-  min-height: 100vh;
-  padding: 2rem 1.25rem 3rem;
+  min-height: 100%;
+  padding: 1rem 0 2rem;
 }
 
 .presence-page {
-  min-height: 100vh;
-  padding: 2rem 1.25rem 3rem;
+  min-height: 100%;
+  padding: 1rem 0 2rem;
 }
 
 .chat-page {
-  min-height: 100vh;
-  padding: 2rem 1.25rem 3rem;
+  min-height: 100%;
+  padding: 1rem 0 2rem;
+}
+
+.auth-page {
+  min-height: 100%;
+  padding: 1rem 0 2rem;
 }
 
 .presence-shell,
 .sessions-shell,
-.chat-shell {
+.chat-shell,
+.auth-shell {
   max-width: 1200px;
   margin: 0 auto;
   display: grid;
@@ -420,6 +568,12 @@ a {
   gap: 1.25rem;
 }
 
+.auth-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 1.25rem;
+}
+
 .presence-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
@@ -434,7 +588,8 @@ a {
 }
 
 .presence-panel,
-.session-panel {
+.session-panel,
+.auth-panel {
   padding: 1.4rem;
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.82);
@@ -1121,9 +1276,21 @@ a {
   }
 }
 
+@media (max-width: 1200px) {
+  .app-frame {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .app-rail {
+    display: none;
+  }
+}
+
 @media (max-width: 900px) {
+  .app-frame,
   .hero-grid,
   .grid,
+  .auth-grid,
   .presence-grid,
   .sessions-grid,
   .chat-layout,
@@ -1135,10 +1302,19 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .app-frame {
+    padding: 0.75rem;
+  }
+
+  .app-sidebar {
+    order: 2;
+  }
+
   .callouts {
     padding-top: 0;
   }
 
+  .app-topbar,
   .item {
     flex-direction: column;
   }
@@ -1158,7 +1334,8 @@ a {
 
   .presence-actions,
   .sessions-actions,
-  .chat-hero-actions {
+  .chat-hero-actions,
+  .app-topbar-actions {
     align-items: stretch;
   }
 

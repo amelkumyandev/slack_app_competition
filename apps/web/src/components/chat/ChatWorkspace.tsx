@@ -851,14 +851,15 @@ export function ChatWorkspace() {
               </div>
 
               <p className="panel-copy">
-                The messaging slice reuses the earlier cookie-backed account and session work. Once
-                this browser has an authenticated session, the chat shell can fetch durable history
-                and join the right SignalR conversation group.
+                The messaging slice still uses the same cookie-backed account and session flows, but
+                signed-out users now enter through the dedicated auth route instead of borrowing the
+                sessions screen. Once this browser has an authenticated session, the chat shell can
+                fetch durable history and join the right SignalR conversation group.
               </p>
 
               <div className="presence-empty-actions">
-                <Link className="primary-link" href="/sessions">
-                  Go to sessions sign-in
+                <Link className="primary-link" href="/auth">
+                  Go to auth
                 </Link>
                 <Link className="ghost-link" href="/">
                   Back to overview

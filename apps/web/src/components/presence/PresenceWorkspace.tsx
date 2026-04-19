@@ -438,14 +438,15 @@ export function PresenceWorkspace() {
               </div>
 
               <p className="panel-copy">
-                The presence workspace reuses the cookie-backed auth flow from the earlier session
-                slice. Once you have an active browser session, come back here and this tab will
-                immediately join the user group and start publishing heartbeats.
+                The presence workspace reuses the same cookie-backed auth flow, but the shared shell
+                now sends signed-out users through the dedicated auth screen first. Once this
+                browser has an active session, the tab can immediately join the user group and
+                start publishing heartbeats.
               </p>
 
               <div className="presence-empty-actions">
-                <Link className="primary-link" href="/sessions">
-                  Go to sessions sign-in
+                <Link className="primary-link" href="/auth">
+                  Go to auth
                 </Link>
                 <Link className="ghost-link" href="/">
                   Back to overview

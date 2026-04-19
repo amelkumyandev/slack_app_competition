@@ -18,7 +18,7 @@ const scaffoldingMilestones = [
   ["F02", "Docker Compose bootstrap"],
   ["F03", "Auth and account core"],
   ["F04", "Session management screen"],
-  ["F10", "Messaging core, replies, edits, deletes, and history"],
+  ["F13", "Slack-like shell and dedicated auth screens"],
 ] as const;
 
 export default function Home() {
@@ -29,15 +29,17 @@ export default function Home() {
           <div className="hero-grid">
             <div className="hero-copy">
               <span className="eyebrow">Scaffold Ready</span>
-              <h1>Slack-style chat, grounded in a modular monolith.</h1>
+              <h1>Slack-style chat, now framed as one cohesive product shell.</h1>
               <p>
-                This branch lays down the repo structure for a Next.js frontend,
-                an ASP.NET Core API, shared backend modules, and the test lanes
-                we will fill in branch by branch. The newest interactive slice is
-                now the durable chat workspace, with sessions and presence still
-                available alongside it.
+                The monorepo now has a dedicated auth entry route, shared app
+                chrome around every core screen, and the earlier feature slices
+                gathered into a single frontend shell instead of isolated demo
+                pages.
               </p>
               <div className="hero-actions">
+                <Link className="primary-link" href="/auth">
+                  Open auth
+                </Link>
                 <Link className="primary-link" href="/chat">
                   Open chat workspace
                 </Link>
@@ -47,7 +49,7 @@ export default function Home() {
                 <Link className="secondary-button" href="/presence">
                   Open presence workspace
                 </Link>
-                <div className="badge">Current slice: durable messaging with realtime gap repair</div>
+                <div className="badge">Current slice: shared Slack-like shell and auth entry screens</div>
               </div>
             </div>
 
@@ -103,9 +105,9 @@ export default function Home() {
         </section>
 
         <section className="footer-note">
-          This landing page stays intentionally lightweight. The full Slack-like
-          shell, chat views, admin flows, and reconnect states are still deferred
-          to later branches in the implementation backlog.
+          The shell is now in place. Later branches can focus on room management,
+          admin modals, and QA hardening without first stitching the product
+          routes together.
         </section>
       </div>
     </main>

@@ -16,6 +16,7 @@ This repository starts the competition entry as a **single monorepo** with a **m
 - `feat/messaging-core-and-history` adds durable room and direct messages, multiline text, replies, edit/delete flows, room-admin delete permissions, direct-message read-only freeze after bans, and a live `/chat` workspace with windowed history rendering.
 - `feat/attachments-and-secure-downloads` adds filesystem-backed uploads, secure attachment downloads, room-delete cleanup, and chat composer support for file sharing with optional comments.
 - `feat/unread-and-chat-navigation` adds per-user conversation read watermarks, unread counters for rooms and directs, and live chat navigation pills that clear as conversations are opened.
+- `feat/slack-like-shell-and-core-screens` adds a shared app shell, a dedicated `/auth` route, and cohesive route framing across auth, chat, sessions, and presence.
 
 ## Planned Stack
 
@@ -123,6 +124,8 @@ The backend now exposes the initial auth/account endpoints:
 
 Auth is currently implemented with a database-backed cookie session model so later session-management work can build on the same persistence instead of replacing it.
 
+The web app now also includes a dedicated `/auth` route so signed-out users can enter through a focused account screen instead of borrowing the sessions page.
+
 ## Current Sessions API
 
 The session-management slice now exposes:
@@ -132,10 +135,10 @@ The session-management slice now exposes:
 
 The web app includes a focused `/sessions` route that can:
 
-- sign in or create an account for demo purposes
 - show the current browser session distinctly
 - list other persisted sessions
 - revoke another session without logging out the current browser
+- route signed-out users to `/auth` for the actual sign-in and create-account flow
 
 ## Current Contacts API
 

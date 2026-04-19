@@ -2,9 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
 import {
-  type AuthResponse,
   type CurrentUserResponse,
   type MessageResponse,
   type SessionRevocationResponse,
@@ -14,31 +12,13 @@ import {
 import { ApiClientError, apiBaseUrl, apiRequest } from "@/lib/api/client";
 
 type WorkspaceStatus = "loading" | "ready" | "auth" | "error";
-type AuthMode = "login" | "register";
-
-const defaultLoginDraft = {
-  emailOrUserName: "",
-  password: "",
-  rememberMe: true,
-};
-
-const defaultRegisterDraft = {
-  email: "",
-  userName: "",
-  password: "",
-  rememberMe: true,
-};
 
 export function SessionsWorkspace() {
   const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceStatus>("loading");
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [sessions, setSessions] = useState<UserSessionResponse[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [loginDraft, setLoginDraft] = useState(defaultLoginDraft);
-  const [registerDraft, setRegisterDraft] = useState(defaultRegisterDraft);
-  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null);
@@ -75,46 +55,6 @@ export function SessionsWorkspace() {
       setErrorMessage(getErrorMessage(error, "We couldn't load the session inventory right now."));
     } finally {
       setRefreshing(false);
-    }
-  }
-
-  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setAuthSubmitting(true);
-    setNotice(null);
-    setErrorMessage(null);
-
-    try {
-      if (authMode === "login") {
-        await apiRequest<AuthResponse>("/api/auth/login", {
-          method: "POST",
-          body: JSON.stringify(loginDraft),
-        });
-
-        setLoginDraft((current) => ({
-          ...current,
-          password: "",
-        }));
-        setNotice("Signed in. Session inventory is now up to date.");
-      } else {
-        await apiRequest<AuthResponse>("/api/auth/register", {
-          method: "POST",
-          body: JSON.stringify(registerDraft),
-        });
-
-        setRegisterDraft((current) => ({
-          ...current,
-          password: "",
-        }));
-        setNotice("Account created. This browser is now the current session.");
-      }
-
-      await loadWorkspace(false);
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error, "Authentication did not complete."));
-      setWorkspaceStatus("auth");
-    } finally {
-      setAuthSubmitting(false);
     }
   }
 
@@ -177,9 +117,9 @@ export function SessionsWorkspace() {
             <span className="eyebrow">F04 Session Management</span>
             <h1>Review active browsers and revoke access selectively.</h1>
             <p>
-              This screen is the first user-facing slice that exercises the persisted{" "}
-              <code>user_sessions</code> model. It stays intentionally focused while the broader
-              Slack-like shell lands in later branches.
+              This screen exercises the persisted <code>user_sessions</code> model inside the shared
+              product shell, so security and account access can now live beside chat and presence
+              instead of as a standalone feature demo.
             </p>
           </div>
 
@@ -187,7 +127,7 @@ export function SessionsWorkspace() {
             <button
               className="secondary-button"
               onClick={() => void loadWorkspace(false)}
-              disabled={workspaceStatus === "loading" || refreshing || authSubmitting || signingOut}
+              disabled={workspaceStatus === "loading" || refreshing || signingOut}
               type="button"
             >
               {refreshing ? "Refreshing..." : "Refresh sessions"}
@@ -238,152 +178,22 @@ export function SessionsWorkspace() {
               <div className="panel-header">
                 <div>
                   <span className="panel-kicker">Access required</span>
-                  <h2>Sign in to inspect your stored sessions</h2>
+                  <h2>Sign in before inspecting stored browser sessions</h2>
                 </div>
               </div>
               <p className="panel-copy">
-                Dedicated auth screens land in a later branch, but this workspace lets us exercise
-                session persistence right now. You can sign in with an existing account or create a
-                fresh one here.
+                The shell now has a dedicated auth route, so the sessions screen can stay focused on
+                security and device inventory instead of also acting as the sign-in form.
               </p>
 
-              <div className="toggle-row" role="tablist" aria-label="Authentication mode">
-                <button
-                  className={authMode === "login" ? "toggle-button active" : "toggle-button"}
-                  onClick={() => setAuthMode("login")}
-                  type="button"
-                >
-                  Sign in
-                </button>
-                <button
-                  className={authMode === "register" ? "toggle-button active" : "toggle-button"}
-                  onClick={() => setAuthMode("register")}
-                  type="button"
-                >
-                  Create account
-                </button>
+              <div className="presence-empty-actions">
+                <Link className="primary-link" href="/auth">
+                  Go to auth
+                </Link>
+                <Link className="ghost-link" href="/chat">
+                  Open chat shell
+                </Link>
               </div>
-
-              <form className="auth-form" onSubmit={handleAuthSubmit}>
-                {authMode === "login" ? (
-                  <>
-                    <label className="field">
-                      <span>Email or username</span>
-                      <input
-                        autoComplete="username"
-                        onChange={(event) =>
-                          setLoginDraft((current) => ({
-                            ...current,
-                            emailOrUserName: event.target.value,
-                          }))
-                        }
-                        required
-                        type="text"
-                        value={loginDraft.emailOrUserName}
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Password</span>
-                      <input
-                        autoComplete="current-password"
-                        onChange={(event) =>
-                          setLoginDraft((current) => ({
-                            ...current,
-                            password: event.target.value,
-                          }))
-                        }
-                        required
-                        type="password"
-                        value={loginDraft.password}
-                      />
-                    </label>
-                    <label className="checkbox-field">
-                      <input
-                        checked={loginDraft.rememberMe}
-                        onChange={(event) =>
-                          setLoginDraft((current) => ({
-                            ...current,
-                            rememberMe: event.target.checked,
-                          }))
-                        }
-                        type="checkbox"
-                      />
-                      <span>Keep this browser signed in</span>
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label className="field">
-                      <span>Email</span>
-                      <input
-                        autoComplete="email"
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({
-                            ...current,
-                            email: event.target.value,
-                          }))
-                        }
-                        required
-                        type="email"
-                        value={registerDraft.email}
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Username</span>
-                      <input
-                        autoComplete="username"
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({
-                            ...current,
-                            userName: event.target.value,
-                          }))
-                        }
-                        required
-                        type="text"
-                        value={registerDraft.userName}
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Password</span>
-                      <input
-                        autoComplete="new-password"
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({
-                            ...current,
-                            password: event.target.value,
-                          }))
-                        }
-                        required
-                        type="password"
-                        value={registerDraft.password}
-                      />
-                    </label>
-                    <label className="checkbox-field">
-                      <input
-                        checked={registerDraft.rememberMe}
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({
-                            ...current,
-                            rememberMe: event.target.checked,
-                          }))
-                        }
-                        type="checkbox"
-                      />
-                      <span>Create a persistent session for this browser</span>
-                    </label>
-                  </>
-                )}
-
-                <button className="primary-button" disabled={authSubmitting} type="submit">
-                  {authSubmitting
-                    ? authMode === "login"
-                      ? "Signing in..."
-                      : "Creating account..."
-                    : authMode === "login"
-                      ? "Sign in"
-                      : "Create account"}
-                </button>
-              </form>
             </article>
 
             <article className="session-panel side-panel">
@@ -483,8 +293,8 @@ export function SessionsWorkspace() {
               </div>
               <p className="panel-copy">
                 The feature branch keeps this screen explicit about failure states. You can retry
-                without a page reload, and later branches will use the same pattern for realtime
-                reconnects and sync repair.
+                without a page reload, and the broader shell now uses the same explicit-state
+                pattern across auth, presence, and chat.
               </p>
               <button className="primary-button" onClick={() => void loadWorkspace(true)} type="button">
                 Retry loading sessions
