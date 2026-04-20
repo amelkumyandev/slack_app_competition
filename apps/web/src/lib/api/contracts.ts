@@ -235,6 +235,33 @@ export type ContactSummaryResponse = {
   bansReceived: UserBanContactResponse[];
 };
 
+export type PmPolicyResponse = {
+  targetUserId: string;
+  targetUserName: string;
+  canStartConversation: boolean;
+  state: string;
+  existingConversationAccess: string;
+  reason: string;
+};
+
+export type CreateFriendRequestRequest = {
+  targetUserName: string;
+  sourceRoomId?: string | null;
+};
+
+export type RemoveFriendRequest = {
+  targetUserName: string;
+};
+
+export type CreateUserBanRequest = {
+  targetUserName: string;
+  reason?: string | null;
+};
+
+export type RemoveUserBanRequest = {
+  targetUserName: string;
+};
+
 export type ReplyPreviewResponse = {
   messageId: string;
   authorUserId: string;

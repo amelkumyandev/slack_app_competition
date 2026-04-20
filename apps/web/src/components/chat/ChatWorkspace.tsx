@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from "@microsoft/signalr";
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   Add as AddIcon,
@@ -11,6 +11,7 @@ import {
   Autorenew as AutorenewIcon,
   Bolt as BoltIcon,
   ChatBubbleOutlineOutlined as ChatBubbleOutlineIcon,
+  CheckCircleOutlined as CheckCircleOutlinedIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Close as CloseIcon,
@@ -22,6 +23,7 @@ import {
   MarkUnreadChatAlt as MarkUnreadChatAltIcon,
   Person as PersonOutlineIcon,
   PersonAdd as PersonAddIcon,
+  PersonOff as PersonOffIcon,
   Refresh as RefreshIcon,
   Reply as ReplyIcon,
   Search as SearchIcon,
@@ -65,42 +67,39 @@ import {
   type ConversationReadStateResponse,
   type ConversationSyncResponse,
   type ConversationTimelineResponse,
+  type CreateFriendRequestRequest,
+  type CreateUserBanRequest,
+  type CurrentPresenceResponse,
   type CurrentUserResponse,
   type DirectConversationListResponse,
   type DirectConversationSummaryResponse,
+  type FriendRequestContactResponse,
   type MessageAttachmentResponse,
   type MessageResponse,
+  type PresenceHeartbeatAcceptedResponse,
   type RealtimeContractResponse,
   type RealtimeEnvelope,
+  type RemoveFriendRequest,
+  type RemoveUserBanRequest,
   type RoomDetailsResponse,
   type RoomDirectoryResponse,
+  type RoomInvitationResponse,
   type RoomListItemResponse,
 } from "@/lib/api/contracts";
 import { ApiClientError, apiBaseUrl, apiRequest, signalrUrl } from "@/lib/api/client";
 import { RoomManagementModal } from "@/components/chat/RoomManagementModal";
+import {
+  type SelectedConversation,
+  pickDefaultConversationId,
+  resolveConversationSelection,
+  shouldRefreshNavigationForEvent,
+  sortDirectConversations,
+  sortRooms,
+} from "@/features/chat/shell-state";
 
 type WorkspaceStatus = "loading" | "ready" | "auth" | "error";
 type RealtimeStatus = "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
-
-type SelectedConversation =
-  | {
-      kind: "room";
-      conversationId: string;
-      roomId: string;
-      title: string;
-      subtitle: string;
-      accessMode: "read_write";
-      room: RoomListItemResponse;
-    }
-  | {
-      kind: "direct";
-      conversationId: string;
-      targetUserId: string;
-      title: string;
-      subtitle: string;
-      accessMode: "read_write" | "read_only";
-      direct: DirectConversationSummaryResponse;
-    };
+type PresenceState = "online" | "afk" | "offline";
 
 type TimelineState = {
   conversationId: string | null;
@@ -114,8 +113,10 @@ type TimelineState = {
 };
 
 const historyPageSize = 40;
-const estimatedMessageHeight = 148;
-const overscanCount = 5;
+const generatedTabId =
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function ChatWorkspace() {
   const router = useRouter();
@@ -124,11 +125,11 @@ export function ChatWorkspace() {
   const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceStatus>("loading");
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("disconnected");
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
+  const [currentPresence, setCurrentPresence] = useState<CurrentPresenceResponse | null>(null);
   const [roomDirectory, setRoomDirectory] = useState<RoomDirectoryResponse | null>(null);
   const [contactSummary, setContactSummary] = useState<ContactSummaryResponse | null>(null);
   const [directList, setDirectList] = useState<DirectConversationSummaryResponse[]>([]);
   const [realtimeContract, setRealtimeContract] = useState<RealtimeContractResponse | null>(null);
-  const [selectedConversation, setSelectedConversation] = useState<SelectedConversation | null>(null);
   const [timeline, setTimeline] = useState<TimelineState>({
     conversationId: null,
     messages: [],
@@ -160,10 +161,13 @@ export function ChatWorkspace() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteDraft, setInviteDraft] = useState("");
   const [invitingUser, setInvitingUser] = useState(false);
+  const [friendRequestOpen, setFriendRequestOpen] = useState(false);
+  const [friendRequestDraft, setFriendRequestDraft] = useState("");
+  const [friendRequestSubmitting, setFriendRequestSubmitting] = useState(false);
+  const [inboxActionId, setInboxActionId] = useState<string | null>(null);
+  const [contactActionId, setContactActionId] = useState<string | null>(null);
   const [activeRoomDetails, setActiveRoomDetails] = useState<RoomDetailsResponse | null>(null);
   const [activeRoomDetailsLoading, setActiveRoomDetailsLoading] = useState(false);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [scrollViewportHeight, setScrollViewportHeight] = useState(720);
 
   const connectionRef = useRef<HubConnection | null>(null);
   const selectedConversationRef = useRef<SelectedConversation | null>(null);
@@ -174,23 +178,21 @@ export function ChatWorkspace() {
   const composerFormRef = useRef<HTMLFormElement | null>(null);
   const shouldScrollToBottomRef = useRef(false);
   const loadOlderPendingRef = useRef(false);
-  const selectedConversationId = selectedConversation?.conversationId ?? null;
+  const tabIdRef = useRef(generatedTabId);
+  const connectedAtRef = useRef(new Date().toISOString());
+  const lastInteractionAtRef = useRef(new Date().toISOString());
+
   const requestedConversationId = searchParams.get("conversation");
-
-  const totalHeight = timeline.messages.length * estimatedMessageHeight;
-  const visibleRange = useMemo(() => {
-    const startIndex = Math.max(0, Math.floor(scrollTop / estimatedMessageHeight) - overscanCount);
-    const visibleCount = Math.ceil(scrollViewportHeight / estimatedMessageHeight) + overscanCount * 2;
-    const endIndex = Math.min(timeline.messages.length, startIndex + visibleCount);
-
-    return {
-      startIndex,
-      endIndex,
-      topPadding: startIndex * estimatedMessageHeight,
-      bottomPadding: Math.max(0, totalHeight - endIndex * estimatedMessageHeight),
-      items: timeline.messages.slice(startIndex, endIndex),
-    };
-  }, [scrollTop, scrollViewportHeight, timeline.messages, totalHeight]);
+  const deferredSidebarSearch = useDeferredValue(sidebarSearch.trim().toLowerCase());
+  const defaultConversationId = useMemo(
+    () => pickDefaultConversationId(roomDirectory, directList),
+    [directList, roomDirectory],
+  );
+  const selectedConversation = useMemo(
+    () => resolveConversationSelection(roomDirectory, directList, requestedConversationId ?? defaultConversationId),
+    [defaultConversationId, directList, requestedConversationId, roomDirectory],
+  );
+  const selectedConversationId = selectedConversation?.conversationId ?? null;
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
@@ -201,37 +203,140 @@ export function ChatWorkspace() {
   }, [timeline.latestWatermark]);
 
   useEffect(() => {
-    if (workspaceStatus !== "ready" || !roomDirectory) {
+    if (workspaceStatus !== "ready") {
       return;
     }
 
-    const nextSelection = resolveSelection(roomDirectory, directList, requestedConversationId);
-    setSelectedConversation((current) => (sameConversation(current, nextSelection) ? current : nextSelection));
-
-    if (requestedConversationId && !nextSelection) {
-      replaceConversationQuery(null);
+    if (requestedConversationId && !selectedConversation) {
+      replaceConversationQuery(defaultConversationId ?? null);
+      return;
     }
-    // The search params value is the durable selection source.
+
+    if (!requestedConversationId && defaultConversationId) {
+      replaceConversationQuery(defaultConversationId);
+    }
+    // The URL query is the durable selection source. When it is missing or invalid,
+    // we repair it with the best available conversation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceStatus, roomDirectory, directList, requestedConversationId]);
+  }, [defaultConversationId, requestedConversationId, selectedConversation, workspaceStatus]);
 
-  useEffect(() => {
-    const container = timelineContainerRef.current;
-    if (!container) {
+  const refreshActiveRoomDetails = useStableEvent(async () => {
+    const currentSelection = selectedConversationRef.current;
+    if (currentSelection?.kind !== "room") {
+      setActiveRoomDetails(null);
+      setActiveRoomDetailsLoading(false);
       return;
     }
 
-    const updateViewportHeight = () => {
-      setScrollViewportHeight(container.clientHeight || 720);
+    setActiveRoomDetailsLoading(true);
+
+    try {
+      const details = await apiRequest<RoomDetailsResponse>(`/api/rooms/${currentSelection.roomId}`);
+      if (selectedConversationRef.current?.kind === "room" && selectedConversationRef.current.roomId === currentSelection.roomId) {
+        setActiveRoomDetails(details);
+      }
+    } catch {
+      if (selectedConversationRef.current?.kind === "room" && selectedConversationRef.current.roomId === currentSelection.roomId) {
+        setActiveRoomDetails(null);
+      }
+    } finally {
+      if (selectedConversationRef.current?.kind === "room" && selectedConversationRef.current.roomId === currentSelection.roomId) {
+        setActiveRoomDetailsLoading(false);
+      }
+    }
+  });
+
+  async function fetchNavigationData() {
+    const [rooms, contacts, directs] = await Promise.all([
+      apiRequest<RoomDirectoryResponse>("/api/rooms"),
+      apiRequest<ContactSummaryResponse>("/api/contacts"),
+      apiRequest<DirectConversationListResponse>("/api/conversations/direct"),
+    ]);
+
+    return {
+      rooms,
+      contacts,
+      directs,
+    };
+  }
+
+  async function refreshNavigationData() {
+    const navigation = await fetchNavigationData();
+    setRoomDirectory(navigation.rooms);
+    setContactSummary(navigation.contacts);
+    setDirectList(navigation.directs.conversations);
+    return navigation;
+  }
+
+  const refreshCurrentPresence = useStableEvent(async () => {
+    try {
+      const response = await apiRequest<CurrentPresenceResponse>("/api/presence/me");
+      setCurrentPresence(response);
+    } catch {
+      // Presence is supplemental. The chat workspace stays usable if this call fails.
+    }
+  });
+
+  const sendPresenceHeartbeat = useStableEvent(async () => {
+    if (workspaceStatus !== "ready") {
+      return;
+    }
+
+    const payload = {
+      tabId: tabIdRef.current,
+      lastInteractionAtUtc: lastInteractionAtRef.current,
+      visibilityState: typeof document === "undefined" ? "visible" : document.visibilityState,
+      connectedAtUtc: connectedAtRef.current,
     };
 
-    updateViewportHeight();
-    window.addEventListener("resize", updateViewportHeight);
+    try {
+      const connection = connectionRef.current;
+      const accepted =
+        connection && connection.state === HubConnectionState.Connected
+          ? await connection.invoke<PresenceHeartbeatAcceptedResponse>("Heartbeat", payload)
+          : await apiRequest<PresenceHeartbeatAcceptedResponse>("/api/presence/heartbeat", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
 
-    return () => {
-      window.removeEventListener("resize", updateViewportHeight);
-    };
-  }, [selectedConversation?.conversationId]);
+      setCurrentPresence((current) =>
+        current
+          ? {
+              ...current,
+              presence: accepted.presence,
+              heartbeatIntervalSeconds: accepted.heartbeatIntervalSeconds,
+              heartbeatTtlSeconds: accepted.heartbeatTtlSeconds,
+              afkThresholdSeconds: accepted.afkThresholdSeconds,
+            }
+          : null,
+      );
+    } catch {
+      // Presence refresh should not interrupt core chat flows.
+    }
+  });
+
+  const handleRealtimeEvent = useStableEvent((event: RealtimeEnvelope) => {
+    const selected = selectedConversationRef.current;
+
+    if (selected && event.scope === "conversation" && event.conversationId === selected.conversationId && event.watermark) {
+      if (event.watermark > latestWatermarkRef.current + 1) {
+        void syncSelectedConversation("gap");
+        return;
+      }
+
+      if (event.watermark > latestWatermarkRef.current) {
+        void syncSelectedConversation("live");
+      }
+
+      return;
+    }
+
+    if (shouldRefreshNavigationForEvent(event, selected?.conversationId ?? null)) {
+      void refreshNavigationData()
+        .then(() => refreshActiveRoomDetails())
+        .catch(() => undefined);
+    }
+  });
 
   useEffect(() => {
     void loadWorkspace(true);
@@ -242,6 +347,60 @@ export function ChatWorkspace() {
     // Initial workspace bootstrapping happens once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (workspaceStatus !== "ready") {
+      return;
+    }
+
+    void refreshCurrentPresence();
+    void sendPresenceHeartbeat();
+
+    const updateLastInteraction = () => {
+      lastInteractionAtRef.current = new Date().toISOString();
+    };
+
+    const handleVisible = () => {
+      lastInteractionAtRef.current = new Date().toISOString();
+      void sendPresenceHeartbeat();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        handleVisible();
+      }
+    };
+
+    const heartbeatIntervalMs = Math.max(
+      10,
+      realtimeContract?.presence.heartbeatIntervalSeconds ?? currentPresence?.heartbeatIntervalSeconds ?? 20,
+    ) * 1000;
+
+    const intervalId = window.setInterval(() => {
+      void sendPresenceHeartbeat();
+    }, heartbeatIntervalMs);
+
+    window.addEventListener("pointerdown", updateLastInteraction, { passive: true });
+    window.addEventListener("keydown", updateLastInteraction);
+    window.addEventListener("touchstart", updateLastInteraction, { passive: true });
+    window.addEventListener("focus", handleVisible);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("pointerdown", updateLastInteraction);
+      window.removeEventListener("keydown", updateLastInteraction);
+      window.removeEventListener("touchstart", updateLastInteraction);
+      window.removeEventListener("focus", handleVisible);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    currentPresence?.heartbeatIntervalSeconds,
+    realtimeContract?.presence.heartbeatIntervalSeconds,
+    refreshCurrentPresence,
+    sendPresenceHeartbeat,
+    workspaceStatus,
+  ]);
 
   useEffect(() => {
     if (workspaceStatus !== "ready") {
@@ -272,29 +431,12 @@ export function ChatWorkspace() {
         .build();
 
       connection.on("event.received", (event: RealtimeEnvelope) => {
-        const selected = selectedConversationRef.current;
-        if (!selected || event.conversationId !== selected.conversationId || !event.watermark) {
-          if (event.scope === "conversation" && event.conversationId) {
-            void refreshNavigationData();
-          }
-          return;
-        }
-
-        if (event.watermark > latestWatermarkRef.current + 1) {
-          void syncSelectedConversation("gap");
-          return;
-        }
-
-        if (event.watermark <= latestWatermarkRef.current) {
-          return;
-        }
-
-        void syncSelectedConversation("live");
+        handleRealtimeEvent(event);
       });
 
       connection.onreconnecting((error) => {
         setRealtimeStatus("reconnecting");
-        setFeedbackMessage(getErrorMessage(error, "Realtime is reconnecting. History sync will repair any missed events."));
+        setFeedbackMessage(getErrorMessage(error, "Trying to reconnect to live updates."));
       });
 
       connection.onreconnected(async () => {
@@ -305,6 +447,8 @@ export function ChatWorkspace() {
           await syncConversationSubscription(activeConversation.conversationId);
           await syncSelectedConversation("reconnected");
         }
+
+        await sendPresenceHeartbeat();
       });
 
       connection.onclose((error) => {
@@ -324,6 +468,7 @@ export function ChatWorkspace() {
 
         connectionRef.current = connection;
         setRealtimeStatus("connected");
+        await sendPresenceHeartbeat();
 
         const activeConversation = selectedConversationRef.current;
         if (activeConversation) {
@@ -332,7 +477,7 @@ export function ChatWorkspace() {
       } catch (error) {
         if (!disposed) {
           setRealtimeStatus("error");
-          setErrorMessage(getErrorMessage(error, "We couldn't open the realtime messaging channel."));
+          setErrorMessage(getErrorMessage(error, "We couldn't connect live updates right now."));
         }
       }
     };
@@ -343,10 +488,10 @@ export function ChatWorkspace() {
       disposed = true;
       void stopConnection();
     };
-    // The realtime lifecycle intentionally keys off the workspace readiness gate.
-    // Selection changes are handled by the subscription effect and the selectedConversation ref.
+    // Realtime connection bootstrapping intentionally tracks workspace readiness.
+    // The effect event handlers keep the live callbacks fresh without re-opening the hub on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceStatus]);
+  }, [handleRealtimeEvent, sendPresenceHeartbeat, workspaceStatus]);
 
   useEffect(() => {
     if (!selectedConversationId) {
@@ -360,6 +505,8 @@ export function ChatWorkspace() {
         syncing: false,
         error: null,
       });
+      setActiveRoomDetails(null);
+      setActiveRoomDetailsLoading(false);
       void clearConversationSubscription();
       return;
     }
@@ -371,48 +518,10 @@ export function ChatWorkspace() {
     shouldScrollToBottomRef.current = true;
     void loadTimeline(selectedConversationId, { replace: true, markRead: true });
     void syncConversationSubscription(selectedConversationId);
-    // This effect intentionally keys off the selected conversation id.
-    // Summary and unread updates may replace the selection object without switching conversations.
+    void refreshActiveRoomDetails();
+    // Selection changes intentionally drive timeline loading and room-details refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversationId]);
-
-  useEffect(() => {
-    if (selectedConversation?.kind !== "room") {
-      setRoomManagerOpen(false);
-    }
-  }, [selectedConversation]);
-
-  useEffect(() => {
-    if (selectedConversation?.kind !== "room") {
-      setActiveRoomDetails(null);
-      setActiveRoomDetailsLoading(false);
-      return;
-    }
-
-    let disposed = false;
-    setActiveRoomDetailsLoading(true);
-
-    void apiRequest<RoomDetailsResponse>(`/api/rooms/${selectedConversation.roomId}`)
-      .then((details) => {
-        if (!disposed) {
-          setActiveRoomDetails(details);
-        }
-      })
-      .catch(() => {
-        if (!disposed) {
-          setActiveRoomDetails(null);
-        }
-      })
-      .finally(() => {
-        if (!disposed) {
-          setActiveRoomDetailsLoading(false);
-        }
-      });
-
-    return () => {
-      disposed = true;
-    };
-  }, [selectedConversation]);
+  }, [refreshActiveRoomDetails, selectedConversationId]);
 
   useEffect(() => {
     if (!shouldScrollToBottomRef.current) {
@@ -440,18 +549,16 @@ export function ChatWorkspace() {
     setErrorMessage(null);
 
     try {
-      const [me, rooms, contacts, directs, contract] = await Promise.all([
+      const [me, navigation, contract] = await Promise.all([
         apiRequest<CurrentUserResponse>("/api/auth/me"),
-        apiRequest<RoomDirectoryResponse>("/api/rooms"),
-        apiRequest<ContactSummaryResponse>("/api/contacts"),
-        apiRequest<DirectConversationListResponse>("/api/conversations/direct"),
+        fetchNavigationData(),
         apiRequest<RealtimeContractResponse>("/api/realtime/contract"),
       ]);
 
       setCurrentUser(me);
-      setRoomDirectory(rooms);
-      setContactSummary(contacts);
-      setDirectList(directs.conversations);
+      setRoomDirectory(navigation.rooms);
+      setContactSummary(navigation.contacts);
+      setDirectList(navigation.directs.conversations);
       setRealtimeContract(contract);
       setWorkspaceStatus("ready");
     } catch (error) {
@@ -461,32 +568,15 @@ export function ChatWorkspace() {
         setRoomDirectory(null);
         setContactSummary(null);
         setDirectList([]);
-        setSelectedConversation(null);
         replaceConversationQuery(null);
         return;
       }
 
       setWorkspaceStatus("error");
-      setErrorMessage(getErrorMessage(error, "We couldn't load the messaging workspace."));
+      setErrorMessage(getErrorMessage(error, "We couldn't load your chat workspace."));
     } finally {
       setRefreshing(false);
     }
-  }
-
-  async function refreshNavigationData() {
-    if (workspaceStatus !== "ready") {
-      return;
-    }
-
-    const [rooms, contacts, directs] = await Promise.all([
-      apiRequest<RoomDirectoryResponse>("/api/rooms"),
-      apiRequest<ContactSummaryResponse>("/api/contacts"),
-      apiRequest<DirectConversationListResponse>("/api/conversations/direct"),
-    ]);
-
-    setRoomDirectory(rooms);
-    setContactSummary(contacts);
-    setDirectList(directs.conversations);
   }
 
   function applyReadState(conversationId: string, readState: ConversationReadStateResponse) {
@@ -570,12 +660,16 @@ export function ChatWorkspace() {
     options: { replace: boolean; beforeWatermark?: number | null; markRead?: boolean } = { replace: true },
   ) {
     const requestToken = ++timelineRequestTokenRef.current;
+    const container = timelineContainerRef.current;
+    const prependAnchor = !options.replace && container
+      ? { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop }
+      : null;
 
     setTimeline((current) => ({
       conversationId,
-      messages: options.replace ? current.messages : current.messages,
+      messages: current.messages,
       nextCursor: options.replace ? null : current.nextCursor,
-      latestWatermark: options.replace ? current.latestWatermark : current.latestWatermark,
+      latestWatermark: current.latestWatermark,
       loading: options.replace,
       loadingOlder: !options.replace,
       syncing: false,
@@ -598,9 +692,7 @@ export function ChatWorkspace() {
       }
 
       setTimeline((current) => {
-        const nextMessages = options.replace
-          ? response.messages
-          : mergeOlderMessages(response.messages, current.messages);
+        const nextMessages = options.replace ? response.messages : mergeOlderMessages(response.messages, current.messages);
 
         return {
           conversationId: response.conversationId,
@@ -615,6 +707,19 @@ export function ChatWorkspace() {
       });
 
       latestWatermarkRef.current = response.latestWatermark;
+
+      if (!options.replace && prependAnchor) {
+        window.requestAnimationFrame(() => {
+          const currentContainer = timelineContainerRef.current;
+          if (!currentContainer) {
+            return;
+          }
+
+          currentContainer.scrollTop =
+            currentContainer.scrollHeight - prependAnchor.scrollHeight + prependAnchor.scrollTop;
+        });
+      }
+
       if (options.replace) {
         const latestMessage = response.messages.at(-1) ?? null;
         applyConversationSummary(
@@ -638,7 +743,7 @@ export function ChatWorkspace() {
         loading: false,
         loadingOlder: false,
         syncing: false,
-        error: getErrorMessage(error, "We couldn't load the message history."),
+        error: getErrorMessage(error, "We couldn't load this conversation."),
       }));
     }
   }
@@ -648,7 +753,6 @@ export function ChatWorkspace() {
       return;
     }
 
-    loadOlderPendingRef.current = true;
     await loadTimeline(selectedConversation.conversationId, {
       replace: false,
       beforeWatermark: timeline.nextCursor,
@@ -688,13 +792,13 @@ export function ChatWorkspace() {
       }
 
       if (reason === "gap") {
-        setFeedbackMessage("A realtime watermark gap was detected, and the timeline resynced from durable history.");
+        setFeedbackMessage("We repaired a missed update and reloaded the latest messages.");
       }
     } catch (error) {
       setTimeline((current) => ({
         ...current,
         syncing: false,
-        error: getErrorMessage(error, "The conversation could not be resynchronized."),
+        error: getErrorMessage(error, "We couldn't resync this conversation."),
       }));
     }
   }
@@ -756,10 +860,9 @@ export function ChatWorkspace() {
     router.replace(nextHref, { scroll: false });
   }
 
-  function handleSelectConversation(nextConversation: SelectedConversation | null) {
+  function selectConversation(conversationId: string | null) {
     startTransition(() => {
-      setSelectedConversation(nextConversation);
-      replaceConversationQuery(nextConversation?.conversationId ?? null);
+      replaceConversationQuery(conversationId);
     });
   }
 
@@ -773,9 +876,9 @@ export function ChatWorkspace() {
         method: "POST",
       });
 
+      await refreshNavigationData();
       setFeedbackMessage(response.message);
-      await loadWorkspace(false);
-      handleSelectConversation(toRoomSelection(room));
+      selectConversation(room.conversationId);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "We couldn't join that room."));
     } finally {
@@ -797,10 +900,9 @@ export function ChatWorkspace() {
       });
 
       await refreshNavigationData();
-      handleSelectConversation(toDirectSelection(directConversation));
-      setFeedbackMessage(`Opened a direct conversation with ${targetUserName}.`);
+      selectConversation(directConversation.conversationId);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "The direct conversation could not be opened."));
+      setErrorMessage(getErrorMessage(error, "That direct message could not be opened."));
     } finally {
       setOpeningDirectUserName(null);
     }
@@ -808,12 +910,11 @@ export function ChatWorkspace() {
 
   async function handleSubmitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedConversation) {
+    if (!selectedConversation || selectedConversation.accessMode === "read_only") {
       return;
     }
 
     setMessageSubmitting(true);
-    setFeedbackMessage(null);
     setErrorMessage(null);
 
     try {
@@ -851,8 +952,6 @@ export function ChatWorkspace() {
             replyToMessageId: replyTarget?.messageId ?? null,
           }),
         });
-
-        setFeedbackMessage("Message sent.");
       }
 
       setDraftText("");
@@ -863,8 +962,9 @@ export function ChatWorkspace() {
       shouldScrollToBottomRef.current = true;
       await loadTimeline(selectedConversation.conversationId, { replace: true, markRead: true });
       await refreshNavigationData();
+      await refreshActiveRoomDetails();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "The message could not be saved."));
+      setErrorMessage(getErrorMessage(error, "That message could not be saved."));
     } finally {
       setMessageSubmitting(false);
     }
@@ -875,11 +975,10 @@ export function ChatWorkspace() {
       return;
     }
 
-    if (!window.confirm("Delete this message? Durable history will record the deletion watermark.")) {
+    if (!window.confirm("Delete this message?")) {
       return;
     }
 
-    setFeedbackMessage(null);
     setErrorMessage(null);
 
     try {
@@ -890,11 +989,11 @@ export function ChatWorkspace() {
         },
       );
 
-      setFeedbackMessage("Message deleted.");
       await loadTimeline(selectedConversation.conversationId, { replace: true, markRead: true });
       await refreshNavigationData();
+      await refreshActiveRoomDetails();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "The message could not be deleted."));
+      setErrorMessage(getErrorMessage(error, "That message could not be deleted."));
     }
   }
 
@@ -920,13 +1019,13 @@ export function ChatWorkspace() {
         }),
       });
 
-      setFeedbackMessage(`Room "${created.name}" created.`);
       setCreateRoomOpen(false);
       setCreateRoomDraft({ name: "", description: "", isPrivate: false });
       await refreshNavigationData();
-      handleSelectConversation(toRoomSelection(created));
+      setFeedbackMessage(`Created #${created.name}.`);
+      selectConversation(created.conversationId);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "The room could not be created."));
+      setErrorMessage(getErrorMessage(error, "That room could not be created."));
     } finally {
       setCreatingRoom(false);
     }
@@ -957,20 +1056,215 @@ export function ChatWorkspace() {
         },
       );
 
-      setFeedbackMessage(`Invitation sent to ${targetUserName}.`);
+      setFeedbackMessage(`Invited ${targetUserName}.`);
       setInviteOpen(false);
       setInviteDraft("");
       await refreshNavigationData();
+      await refreshActiveRoomDetails();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "The invitation could not be sent."));
+      setErrorMessage(getErrorMessage(error, "That invitation could not be sent."));
     } finally {
       setInvitingUser(false);
     }
   }
 
+  async function handleSendFriendRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const targetUserName = friendRequestDraft.trim();
+    if (!targetUserName) {
+      return;
+    }
+
+    setFriendRequestSubmitting(true);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const payload: CreateFriendRequestRequest = {
+        targetUserName,
+      };
+
+      await apiRequest<MessageResponse>("/api/contacts/friend-requests", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setFriendRequestOpen(false);
+      setFriendRequestDraft("");
+      setFeedbackMessage(`Friend request sent to ${targetUserName}.`);
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That friend request could not be sent."));
+    } finally {
+      setFriendRequestSubmitting(false);
+    }
+  }
+
+  async function handleAcceptRoomInvitation(invitation: RoomInvitationResponse) {
+    const actionId = `accept-room-${invitation.id}`;
+    setInboxActionId(actionId);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await apiRequest<MessageResponse>(`/api/rooms/invitations/${invitation.id}/accept`, {
+        method: "POST",
+      });
+
+      const navigation = await refreshNavigationData();
+      const acceptedRoom = navigation.rooms.myRooms.find((room) => room.id === invitation.roomId);
+      setFeedbackMessage(`Joined #${invitation.roomName}.`);
+      selectConversation(acceptedRoom?.conversationId ?? null);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That invitation could not be accepted."));
+    } finally {
+      setInboxActionId(null);
+    }
+  }
+
+  async function handleDeclineRoomInvitation(invitation: RoomInvitationResponse) {
+    const actionId = `decline-room-${invitation.id}`;
+    setInboxActionId(actionId);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await apiRequest<MessageResponse>(`/api/rooms/invitations/${invitation.id}/decline`, {
+        method: "POST",
+      });
+
+      setFeedbackMessage(`Declined the invitation to #${invitation.roomName}.`);
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That invitation could not be declined."));
+    } finally {
+      setInboxActionId(null);
+    }
+  }
+
+  async function handleAcceptFriendRequest(friendRequest: FriendRequestContactResponse) {
+    const actionId = `accept-friend-${friendRequest.id}`;
+    setInboxActionId(actionId);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await apiRequest<MessageResponse>(`/api/contacts/friend-requests/${friendRequest.id}/accept`, {
+        method: "POST",
+      });
+
+      setFeedbackMessage(`You and ${friendRequest.requesterUserName} are now connected.`);
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That friend request could not be accepted."));
+    } finally {
+      setInboxActionId(null);
+    }
+  }
+
+  async function handleDeclineFriendRequest(friendRequest: FriendRequestContactResponse) {
+    const actionId = `decline-friend-${friendRequest.id}`;
+    setInboxActionId(actionId);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await apiRequest<MessageResponse>(`/api/contacts/friend-requests/${friendRequest.id}/decline`, {
+        method: "POST",
+      });
+
+      setFeedbackMessage(`Declined ${friendRequest.requesterUserName}'s request.`);
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That friend request could not be declined."));
+    } finally {
+      setInboxActionId(null);
+    }
+  }
+
+  async function handleRemoveFriend(targetUserName: string) {
+    if (!window.confirm(`Remove ${targetUserName} from your contacts? Direct messaging will stop until you reconnect again.`)) {
+      return;
+    }
+
+    setContactActionId(`remove-friend-${targetUserName}`);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const payload: RemoveFriendRequest = {
+        targetUserName,
+      };
+
+      await apiRequest<MessageResponse>("/api/contacts/friends/remove", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setFeedbackMessage(`${targetUserName} was removed from your contacts.`);
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That contact could not be removed."));
+    } finally {
+      setContactActionId(null);
+    }
+  }
+
+  async function handleBanUser(targetUserName: string) {
+    if (!window.confirm(`Block ${targetUserName}? Existing direct history stays visible but new messages will be frozen.`)) {
+      return;
+    }
+
+    setContactActionId(`ban-${targetUserName}`);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const payload: CreateUserBanRequest = {
+        targetUserName,
+      };
+
+      await apiRequest<MessageResponse>("/api/contacts/bans", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setFeedbackMessage(`${targetUserName} is now blocked.`);
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That user could not be blocked."));
+    } finally {
+      setContactActionId(null);
+    }
+  }
+
+  async function handleUnbanUser(targetUserName: string) {
+    setContactActionId(`unban-${targetUserName}`);
+    setFeedbackMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const payload: RemoveUserBanRequest = {
+        targetUserName,
+      };
+
+      await apiRequest<MessageResponse>("/api/contacts/bans/remove", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setFeedbackMessage(`${targetUserName} is no longer blocked.`);
+      await refreshNavigationData();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "That user could not be unblocked."));
+    } finally {
+      setContactActionId(null);
+    }
+  }
+
   async function handleDownloadAttachment(attachment: MessageAttachmentResponse) {
     setDownloadTargetId(attachment.id);
-    setFeedbackMessage(null);
     setErrorMessage(null);
 
     try {
@@ -992,62 +1286,103 @@ export function ChatWorkspace() {
       link.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "The attachment download could not be completed."));
+      setErrorMessage(getErrorMessage(error, "That attachment could not be downloaded."));
     } finally {
       setDownloadTargetId(null);
     }
   }
 
-  const totalUnreadFriendly = (roomDirectory?.pendingInvitations.length ?? 0) + (contactSummary?.incomingFriendRequests.length ?? 0);
   const totalConversationUnread =
     (roomDirectory?.myRooms.reduce((count, room) => count + room.unreadCount, 0) ?? 0) +
     directList.reduce((count, conversation) => count + conversation.unreadCount, 0);
-  const activeRoom = selectedConversation?.kind === "room" ? selectedConversation.room : null;
-  const sidebarFilter = sidebarSearch.trim().toLowerCase();
+  const totalInboxItems =
+    (roomDirectory?.pendingInvitations.length ?? 0) +
+    (contactSummary?.incomingFriendRequests.length ?? 0);
+  const pendingRoomInvitations = useMemo(
+    () =>
+      (roomDirectory?.pendingInvitations ?? []).filter(
+        (invitation) =>
+          !deferredSidebarSearch ||
+          invitation.roomName.toLowerCase().includes(deferredSidebarSearch) ||
+          invitation.invitedByUserName.toLowerCase().includes(deferredSidebarSearch),
+      ),
+    [deferredSidebarSearch, roomDirectory?.pendingInvitations],
+  );
+  const incomingFriendRequests = useMemo(
+    () =>
+      (contactSummary?.incomingFriendRequests ?? []).filter(
+        (request) =>
+          !deferredSidebarSearch ||
+          request.requesterUserName.toLowerCase().includes(deferredSidebarSearch) ||
+          request.addresseeUserName.toLowerCase().includes(deferredSidebarSearch),
+      ),
+    [contactSummary?.incomingFriendRequests, deferredSidebarSearch],
+  );
   const publicRooms = useMemo(
-    () => (roomDirectory?.myRooms ?? []).filter((room) => !room.isPrivate && matchesRoom(room, sidebarFilter)),
-    [roomDirectory?.myRooms, sidebarFilter],
+    () => sortRooms((roomDirectory?.myRooms ?? []).filter((room) => !room.isPrivate && matchesRoom(room, deferredSidebarSearch))),
+    [deferredSidebarSearch, roomDirectory?.myRooms],
   );
   const privateRooms = useMemo(
-    () => (roomDirectory?.myRooms ?? []).filter((room) => room.isPrivate && matchesRoom(room, sidebarFilter)),
-    [roomDirectory?.myRooms, sidebarFilter],
+    () => sortRooms((roomDirectory?.myRooms ?? []).filter((room) => room.isPrivate && matchesRoom(room, deferredSidebarSearch))),
+    [deferredSidebarSearch, roomDirectory?.myRooms],
   );
   const filteredDirects = useMemo(
     () =>
-      directList.filter(
-        (conversation) =>
-          !sidebarFilter ||
-          conversation.targetUserName.toLowerCase().includes(sidebarFilter) ||
-          (conversation.lastMessagePreview ?? "").toLowerCase().includes(sidebarFilter),
+      sortDirectConversations(
+        directList.filter(
+          (conversation) =>
+            !deferredSidebarSearch ||
+            conversation.targetUserName.toLowerCase().includes(deferredSidebarSearch) ||
+            (conversation.lastMessagePreview ?? "").toLowerCase().includes(deferredSidebarSearch),
+        ),
       ),
-    [directList, sidebarFilter],
+    [deferredSidebarSearch, directList],
   );
   const filteredFriends = useMemo(
     () =>
-      (contactSummary?.friends ?? []).filter(
-        (friend) => !sidebarFilter || friend.userName.toLowerCase().includes(sidebarFilter),
-      ),
-    [contactSummary?.friends, sidebarFilter],
+      (contactSummary?.friends ?? [])
+        .filter((friend) => !deferredSidebarSearch || friend.userName.toLowerCase().includes(deferredSidebarSearch))
+        .sort((left, right) => left.userName.localeCompare(right.userName, undefined, { sensitivity: "base" })),
+    [contactSummary?.friends, deferredSidebarSearch],
+  );
+  const friendsWithoutDirect = useMemo(
+    () => filteredFriends.filter((friend) => !directList.some((conversation) => conversation.targetUserId === friend.userId)),
+    [directList, filteredFriends],
   );
   const filteredPublicCatalog = useMemo(
-    () => (roomDirectory?.publicCatalog ?? []).filter((room) => matchesRoom(room, sidebarFilter)),
-    [roomDirectory?.publicCatalog, sidebarFilter],
+    () =>
+      sortRooms((roomDirectory?.publicCatalog ?? []).filter((room) => matchesRoom(room, deferredSidebarSearch))),
+    [deferredSidebarSearch, roomDirectory?.publicCatalog],
   );
+  const activeRoom = selectedConversation?.kind === "room" ? selectedConversation.room : null;
+  const selectedDirectFriend =
+    selectedConversation?.kind === "direct"
+      ? contactSummary?.friends.find((friend) => friend.userId === selectedConversation.targetUserId) ?? null
+      : null;
+  const selectedDirectBanIssued =
+    selectedConversation?.kind === "direct"
+      ? contactSummary?.bansIssued.find((ban) => ban.userId === selectedConversation.targetUserId) ?? null
+      : null;
+  const selectedDirectBanReceived =
+    selectedConversation?.kind === "direct"
+      ? contactSummary?.bansReceived.find((ban) => ban.userId === selectedConversation.targetUserId) ?? null
+      : null;
   const selectedConversationLabel = selectedConversation
     ? selectedConversation.kind === "room"
       ? `# ${selectedConversation.title}`
       : selectedConversation.title
     : "No conversation selected";
+  const currentPresenceState = toPresenceState(currentPresence?.presence.state);
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, px: { xs: 1, md: 2 }, py: { xs: 1, md: 2 } }}>
       {feedbackMessage ? (
-        <Alert severity="success" variant="filled" onClose={() => setFeedbackMessage(null)} sx={{ mb: 1.5 }}>
+        <Alert severity="success" onClose={() => setFeedbackMessage(null)} sx={{ mb: 1.5 }}>
           {feedbackMessage}
         </Alert>
       ) : null}
       {errorMessage ? (
-        <Alert severity="error" variant="filled" onClose={() => setErrorMessage(null)} sx={{ mb: 1.5 }}>
+        <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 1.5 }}>
           {errorMessage}
         </Alert>
       ) : null}
@@ -1055,8 +1390,9 @@ export function ChatWorkspace() {
       {workspaceStatus === "loading" ? (
         <StatePanel
           action={<CircularProgress size={22} />}
-          subtitle="Loading workspace"
-          title="Preparing rooms, directs, and durable history"
+          subtitle="Loading"
+          title="Opening your chat workspace"
+          detail="Bringing in conversations, contacts, and the latest message history."
         />
       ) : null}
 
@@ -1067,14 +1403,13 @@ export function ChatWorkspace() {
               <Button component={Link} href="/auth/sign-in" variant="contained">
                 Go to sign in
               </Button>
-              <Button component={Link} href="/" variant="outlined">
-                Back to overview
+              <Button component={Link} href="/auth/register" variant="outlined">
+                Create account
               </Button>
             </Stack>
           }
           subtitle="Access required"
-          title="Sign in before opening the chat workspace"
-          detail="The chat UI uses cookie-backed auth. Once authenticated, durable history and live realtime conversations load automatically."
+          title="Sign in to open your chats"
         />
       ) : null}
 
@@ -1082,11 +1417,11 @@ export function ChatWorkspace() {
         <StatePanel
           action={
             <Button onClick={() => void loadWorkspace(true)} variant="contained">
-              Retry loading chat
+              Retry
             </Button>
           }
-          subtitle="Recoverable error"
-          title="The chat workspace needs a retry"
+          subtitle="Something went wrong"
+          title="The workspace needs another try"
         />
       ) : null}
 
@@ -1096,7 +1431,10 @@ export function ChatWorkspace() {
             display: "grid",
             gridTemplateColumns: {
               xs: "1fr",
-              md: sidebarCollapsed ? "56px minmax(0, 1fr) minmax(280px, 320px)" : "minmax(280px, 320px) minmax(0, 1fr) minmax(280px, 320px)",
+              md: sidebarCollapsed ? "72px minmax(0, 1fr)" : "minmax(280px, 320px) minmax(0, 1fr)",
+              xl: sidebarCollapsed
+                ? "72px minmax(0, 1fr) minmax(300px, 340px)"
+                : "minmax(280px, 320px) minmax(0, 1fr) minmax(300px, 340px)",
             },
             gap: 1.5,
             flex: 1,
@@ -1104,10 +1442,9 @@ export function ChatWorkspace() {
             alignItems: "stretch",
           }}
         >
-          {/* LEFT SIDEBAR */}
           <Card
             sx={{
-              minHeight: { md: "calc(100vh - 120px)" },
+              minHeight: { md: "calc(100vh - 124px)" },
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
@@ -1120,19 +1457,20 @@ export function ChatWorkspace() {
                     <ChevronRightIcon />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Search">
-                  <IconButton size="small">
-                    <SearchIcon />
-                  </IconButton>
-                </Tooltip>
                 <Badge badgeContent={totalConversationUnread} color="secondary" max={99}>
-                  <Tooltip title="Conversations">
-                    <ChatBubbleOutlineIcon fontSize="small" />
-                  </Tooltip>
+                  <ChatBubbleOutlineIcon />
                 </Badge>
-                <Tooltip title="Create room">
+                <Badge badgeContent={totalInboxItems} color="warning" max={99}>
+                  <CheckCircleOutlinedIcon fontSize="small" />
+                </Badge>
+                <Tooltip title="New room">
                   <IconButton color="primary" onClick={() => setCreateRoomOpen(true)} size="small">
                     <AddIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Add contact">
+                  <IconButton onClick={() => setFriendRequestOpen(true)} size="small">
+                    <PersonAddIcon />
                   </IconButton>
                 </Tooltip>
               </Stack>
@@ -1140,28 +1478,39 @@ export function ChatWorkspace() {
               <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
                 <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
                   <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", mb: 1.5 }}>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="h3" sx={{ fontSize: "1.1rem" }}>
-                        Chat
-                      </Typography>
-                      <Typography color="text.secondary" variant="body2" sx={{ mt: 0.35 }}>
-                        Rooms and direct messages in one place.
-                      </Typography>
-                    </Box>
+                    <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", flex: 1, minWidth: 0 }}>
+                      <Avatar sx={{ width: 38, height: 38, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light" }}>
+                        {(currentUser?.userName ?? "?").slice(0, 1).toUpperCase()}
+                      </Avatar>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography variant="h3" sx={{ fontSize: "1.05rem" }}>
+                          {currentUser?.userName ?? "Workspace"}
+                        </Typography>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 0.5, flexWrap: "wrap" }}>
+                          <Chip
+                            label={toPresenceLabel(currentPresenceState)}
+                            size="small"
+                            color={presenceColor(currentPresenceState)}
+                            variant={currentPresenceState === "offline" ? "outlined" : "filled"}
+                          />
+                          {totalConversationUnread > 0 ? (
+                            <Chip label={`${totalConversationUnread} unread`} size="small" variant="outlined" />
+                          ) : null}
+                        </Stack>
+                      </Box>
+                    </Stack>
+
                     <Tooltip title="Collapse sidebar">
                       <IconButton onClick={() => setSidebarCollapsed(true)} size="small">
                         <ChevronLeftIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
                   </Stack>
-                  <Stack direction="row" spacing={0.75} sx={{ mb: 1.5, flexWrap: "wrap" }} useFlexGap>
-                    <Chip label={`${totalConversationUnread} unread`} size="small" variant="outlined" />
-                    {totalUnreadFriendly > 0 ? <Chip label={`${totalUnreadFriendly} requests`} size="small" variant="outlined" /> : null}
-                  </Stack>
+
                   <TextField
                     size="small"
                     fullWidth
-                    placeholder="Search chats, rooms, or people"
+                    placeholder="Search rooms, people, and requests"
                     value={sidebarSearch}
                     onChange={(event) => setSidebarSearch(event.target.value)}
                     slotProps={{
@@ -1178,20 +1527,81 @@ export function ChatWorkspace() {
 
                 <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", px: 1.5, py: 1.5 }}>
                   <Stack spacing={2}>
-                    <SidebarSection
-                      id="public-rooms"
-                      title="Rooms"
-                      count={publicRooms.length}
-                    >
+                    <SidebarSection title="Inbox" count={totalInboxItems}>
+                      {pendingRoomInvitations.length === 0 && incomingFriendRequests.length === 0 ? (
+                        <Typography color="text.secondary" variant="body2">
+                          No pending invitations or contact requests.
+                        </Typography>
+                      ) : (
+                        <Stack spacing={0.75}>
+                          {pendingRoomInvitations.map((invitation) => (
+                            <InboxActionCard
+                              key={invitation.id}
+                              description={`Invited by ${invitation.invitedByUserName}`}
+                              label={`# ${invitation.roomName}`}
+                              primaryAction={
+                                <Button
+                                  disabled={inboxActionId === `accept-room-${invitation.id}`}
+                                  onClick={() => void handleAcceptRoomInvitation(invitation)}
+                                  size="small"
+                                  variant="contained"
+                                >
+                                  {inboxActionId === `accept-room-${invitation.id}` ? "Joining..." : "Accept"}
+                                </Button>
+                              }
+                              secondaryAction={
+                                <Button
+                                  disabled={inboxActionId === `decline-room-${invitation.id}`}
+                                  onClick={() => void handleDeclineRoomInvitation(invitation)}
+                                  size="small"
+                                  variant="text"
+                                >
+                                  {inboxActionId === `decline-room-${invitation.id}` ? "Declining..." : "Decline"}
+                                </Button>
+                              }
+                            />
+                          ))}
+                          {incomingFriendRequests.map((request) => (
+                            <InboxActionCard
+                              key={request.id}
+                              description="Wants to start direct messages"
+                              label={request.requesterUserName}
+                              primaryAction={
+                                <Button
+                                  disabled={inboxActionId === `accept-friend-${request.id}`}
+                                  onClick={() => void handleAcceptFriendRequest(request)}
+                                  size="small"
+                                  variant="contained"
+                                >
+                                  {inboxActionId === `accept-friend-${request.id}` ? "Accepting..." : "Accept"}
+                                </Button>
+                              }
+                              secondaryAction={
+                                <Button
+                                  disabled={inboxActionId === `decline-friend-${request.id}`}
+                                  onClick={() => void handleDeclineFriendRequest(request)}
+                                  size="small"
+                                  variant="text"
+                                >
+                                  {inboxActionId === `decline-friend-${request.id}` ? "Declining..." : "Decline"}
+                                </Button>
+                              }
+                            />
+                          ))}
+                        </Stack>
+                      )}
+                    </SidebarSection>
+
+                    <SidebarSection title="Rooms" count={publicRooms.length}>
                       {publicRooms.length > 0 ? (
                         <List disablePadding sx={{ display: "grid", gap: 0.5 }}>
                           {publicRooms.map((room) => (
                             <ConversationRow
                               key={room.id}
-                              active={selectedConversation?.conversationId === room.conversationId}
+                              active={selectedConversationId === room.conversationId}
                               detail={room.lastMessagePreview ?? `${room.memberCount} members`}
                               label={`# ${room.name}`}
-                              onClick={() => handleSelectConversation(toRoomSelection(room))}
+                              onClick={() => selectConversation(room.conversationId)}
                               unreadCount={room.unreadCount}
                             />
                           ))}
@@ -1203,21 +1613,17 @@ export function ChatWorkspace() {
                       )}
                     </SidebarSection>
 
-                    <SidebarSection
-                      id="private-rooms"
-                      title="Private rooms"
-                      count={privateRooms.length}
-                    >
+                    <SidebarSection title="Private rooms" count={privateRooms.length}>
                       {privateRooms.length > 0 ? (
                         <List disablePadding sx={{ display: "grid", gap: 0.5 }}>
                           {privateRooms.map((room) => (
                             <ConversationRow
                               key={room.id}
-                              active={selectedConversation?.conversationId === room.conversationId}
+                              active={selectedConversationId === room.conversationId}
                               detail={room.lastMessagePreview ?? `${room.memberCount} members`}
                               icon={<LockOutlinedIcon fontSize="small" />}
                               label={`# ${room.name}`}
-                              onClick={() => handleSelectConversation(toRoomSelection(room))}
+                              onClick={() => selectConversation(room.conversationId)}
                               unreadCount={room.unreadCount}
                             />
                           ))}
@@ -1229,35 +1635,36 @@ export function ChatWorkspace() {
                       )}
                     </SidebarSection>
 
-                    <SidebarSection
-                      id="contacts"
-                      title="Direct messages"
-                      count={(contactSummary?.friends.length ?? 0)}
-                    >
+                    <SidebarSection title="Direct messages" count={filteredDirects.length}>
                       {filteredDirects.length > 0 ? (
-                        <List disablePadding sx={{ display: "grid", gap: 0.5, mb: 1 }}>
+                        <List disablePadding sx={{ display: "grid", gap: 0.5 }}>
                           {filteredDirects.map((conversation) => (
                             <ConversationRow
                               key={conversation.conversationId}
-                              active={selectedConversation?.conversationId === conversation.conversationId}
+                              active={selectedConversationId === conversation.conversationId}
                               detail={
                                 conversation.accessMode === "read_only"
                                   ? "Read-only history"
                                   : conversation.lastMessagePreview ?? "Ready to chat"
                               }
                               label={conversation.targetUserName}
-                              onClick={() => handleSelectConversation(toDirectSelection(conversation))}
+                              onClick={() => selectConversation(conversation.conversationId)}
                               unreadCount={conversation.unreadCount}
                               avatarTone="direct"
-                              presence="offline"
                             />
                           ))}
                         </List>
-                      ) : null}
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          No direct messages yet.
+                        </Typography>
+                      )}
+                    </SidebarSection>
 
-                      {filteredFriends.length > 0 ? (
+                    <SidebarSection title="People" count={friendsWithoutDirect.length}>
+                      {friendsWithoutDirect.length > 0 ? (
                         <Stack spacing={0.5}>
-                          {filteredFriends.map((friend) => (
+                          {friendsWithoutDirect.map((friend) => (
                             <ListItemButton
                               key={friend.userId}
                               onClick={() => void handleOpenDirect(friend.userName)}
@@ -1265,69 +1672,60 @@ export function ChatWorkspace() {
                               sx={{ px: 1.25, py: 0.75 }}
                             >
                               <Stack direction="row" spacing={1.25} sx={{ width: "100%", alignItems: "center" }}>
-                                <Box sx={{ position: "relative" }}>
-                                  <Avatar sx={{ width: 30, height: 30, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light", fontSize: "0.8rem" }}>
-                                    {friend.userName.slice(0, 1).toUpperCase()}
-                                  </Avatar>
-                                  <PresenceDot state="offline" />
-                                </Box>
+                                <Avatar sx={{ width: 30, height: 30, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light", fontSize: "0.8rem" }}>
+                                  {friend.userName.slice(0, 1).toUpperCase()}
+                                </Avatar>
                                 <Box sx={{ minWidth: 0, flex: 1 }}>
                                   <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                                     {friend.userName}
                                   </Typography>
                                   <Typography color="text.secondary" variant="caption" noWrap>
-                                    {openingDirectUserName === friend.userName ? "Opening…" : "Send a direct message"}
+                                    {openingDirectUserName === friend.userName ? "Opening..." : "Start a direct message"}
                                   </Typography>
                                 </Box>
                               </Stack>
                             </ListItemButton>
                           ))}
                         </Stack>
-                      ) : null}
-
-                      {filteredFriends.length === 0 && filteredDirects.length === 0 ? (
+                      ) : (
                         <Typography color="text.secondary" variant="body2">
-                          No direct conversations yet.
+                          Everyone here already has an active direct thread.
                         </Typography>
-                      ) : null}
+                      )}
                     </SidebarSection>
 
-                    {filteredPublicCatalog.length > 0 ? (
-                      <SidebarSection
-                        id="public-catalog"
-                        title="Discover"
-                        count={filteredPublicCatalog.length}
-                      >
+                    <SidebarSection title="Discover rooms" count={filteredPublicCatalog.length}>
+                      {filteredPublicCatalog.length > 0 ? (
                         <Stack spacing={0.75}>
-                          {filteredPublicCatalog.slice(0, 5).map((room) => (
-                            <Paper
-                              key={room.id}
-                              variant="outlined"
-                              sx={{ p: 1, borderRadius: 2 }}
-                            >
+                          {filteredPublicCatalog.filter((room) => !room.isMember).slice(0, 6).map((room) => (
+                            <Paper key={room.id} variant="outlined" sx={{ p: 1.25, borderRadius: 2.5 }}>
                               <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                                <Box sx={{ minWidth: 0 }}>
-                                  <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                                     # {room.name}
                                   </Typography>
-                                  <Typography color="text.secondary" variant="caption" noWrap>
+                                  <Typography color="text.secondary" variant="caption" sx={{ display: "block" }}>
                                     {room.memberCount} members
                                   </Typography>
                                 </Box>
                                 <Button
                                   size="small"
                                   variant="outlined"
-                                  disabled={room.isMember || room.isBanned || joiningRoomId === room.id}
+                                  disabled={room.isBanned || joiningRoomId === room.id}
                                   onClick={() => void handleJoinRoom(room)}
                                 >
-                                  {room.isMember ? "Joined" : joiningRoomId === room.id ? "…" : "Join"}
+                                  {joiningRoomId === room.id ? "Joining..." : room.isBanned ? "Unavailable" : "Join"}
                                 </Button>
                               </Stack>
                             </Paper>
                           ))}
                         </Stack>
-                      </SidebarSection>
-                    ) : null}
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          No additional rooms match your search.
+                        </Typography>
+                      )}
+                    </SidebarSection>
                   </Stack>
                 </Box>
 
@@ -1336,8 +1734,8 @@ export function ChatWorkspace() {
                     <Button fullWidth onClick={() => setCreateRoomOpen(true)} startIcon={<AddIcon />} variant="contained">
                       New room
                     </Button>
-                    <Button fullWidth onClick={() => handleSelectConversation(null)} variant="outlined">
-                      Clear
+                    <Button fullWidth onClick={() => setFriendRequestOpen(true)} startIcon={<PersonAddIcon />} variant="outlined">
+                      Add contact
                     </Button>
                   </Stack>
                 </Box>
@@ -1345,21 +1743,14 @@ export function ChatWorkspace() {
             )}
           </Card>
 
-          {/* CENTER - Chat */}
-          <Card sx={{ display: "flex", flexDirection: "column", minHeight: { md: "calc(100vh - 120px)" }, overflow: "hidden" }}>
-            <Box
-              sx={{
-                px: { xs: 2, md: 2.5 },
-                py: 1.75,
-                borderBottom: "1px solid",
-                borderColor: "divider",
-              }}
-            >
+          <Card sx={{ display: "flex", flexDirection: "column", minHeight: { md: "calc(100vh - 124px)" }, overflow: "hidden" }}>
+            <Box sx={{ px: { xs: 2, md: 2.5 }, py: 1.75, borderBottom: "1px solid", borderColor: "divider" }}>
               <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", justifyContent: "space-between" }}>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
                   <Typography color="text.secondary" variant="caption" sx={{ display: "block", mb: 0.5 }}>
-                    {selectedConversation ? (selectedConversation.kind === "room" ? "Room conversation" : "Direct message") : "Home"}
+                    {selectedConversation ? (selectedConversation.kind === "room" ? "Room" : "Direct message") : "Workspace"}
                   </Typography>
+
                   <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
                     {selectedConversation?.kind === "room" ? (
                       selectedConversation.room.isPrivate ? (
@@ -1370,37 +1761,68 @@ export function ChatWorkspace() {
                     ) : selectedConversation ? (
                       <PersonOutlineIcon fontSize="small" sx={{ color: "primary.light" }} />
                     ) : null}
-                    <Typography variant="h2" noWrap sx={{ fontSize: "1.2rem" }}>
-                      {selectedConversationLabel}
+
+                    <Typography variant="h2" sx={{ fontSize: { xs: "1.05rem", md: "1.25rem" }, minWidth: 0 }}>
+                      <Box
+                        component="span"
+                        sx={{
+                          display: "inline-block",
+                          maxWidth: "100%",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          verticalAlign: "bottom",
+                        }}
+                      >
+                        {selectedConversation ? selectedConversationLabel : "Start a conversation"}
+                      </Box>
                     </Typography>
+
                     {selectedConversation?.kind === "direct" && selectedConversation.accessMode === "read_only" ? (
                       <Chip color="warning" label="Read only" size="small" />
                     ) : null}
                   </Stack>
-                  {selectedConversation ? (
-                    <Typography color="text.secondary" variant="body2" noWrap sx={{ mt: 0.25 }}>
-                      {selectedConversation.kind === "room"
+
+                  <Typography
+                    color="text.secondary"
+                    variant="body2"
+                    sx={{
+                      mt: 0.5,
+                      display: "-webkit-box",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: 2,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {selectedConversation
+                      ? selectedConversation.kind === "room"
                         ? selectedConversation.room.description ?? `${selectedConversation.room.memberCount} members`
-                        : selectedConversation.subtitle}
-                    </Typography>
-                  ) : null}
+                        : selectedConversation.subtitle
+                      : "Choose a room, open a direct message, or work through the requests in your inbox."}
+                  </Typography>
                 </Box>
 
-                <Stack direction="row" spacing={1}>
+                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {selectedConversation?.kind === "room" && activeRoomDetails?.permissions.canInvite ? (
+                    <Button onClick={() => setInviteOpen(true)} size="small" startIcon={<PersonAddIcon />} variant="outlined">
+                      Invite
+                    </Button>
+                  ) : null}
+                  {selectedConversation?.kind === "room" ? (
+                    <Button onClick={() => setRoomManagerOpen(true)} size="small" startIcon={<SettingsIcon />} variant="outlined">
+                      Manage
+                    </Button>
+                  ) : null}
                   <Chip
                     icon={timeline.syncing ? <AutorenewIcon /> : <BoltIcon />}
                     color={timeline.syncing ? "warning" : realtimeStatus === "connected" ? "success" : "default"}
-                    label={timeline.syncing ? "Syncing…" : realtimeStatus === "connected" ? "Live" : labelForRealtimeState(realtimeStatus)}
+                    label={timeline.syncing ? "Syncing..." : realtimeStatus === "connected" ? "Live" : labelForRealtimeState(realtimeStatus)}
                     size="small"
                     variant="outlined"
                   />
                   <Tooltip title="Refresh workspace">
                     <span>
-                      <IconButton
-                        onClick={() => void loadWorkspace(false)}
-                        disabled={refreshing}
-                        size="small"
-                      >
+                      <IconButton onClick={() => void loadWorkspace(false)} disabled={refreshing} size="small">
                         {refreshing ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}
                       </IconButton>
                     </span>
@@ -1411,12 +1833,17 @@ export function ChatWorkspace() {
 
             {selectedConversation?.kind === "direct" && selectedConversation.accessMode === "read_only" ? (
               <Alert severity="warning" sx={{ mx: 2, mt: 1.5 }}>
-                This direct conversation is frozen in read-only mode. New messages are blocked by policy.
+                This direct conversation is frozen. You can still review the history, but new messages are blocked.
               </Alert>
             ) : null}
             {realtimeStatus === "reconnecting" ? (
               <Alert severity="warning" sx={{ mx: 2, mt: 1.5 }}>
-                Reconnecting realtime channel…
+                Reconnecting live updates...
+              </Alert>
+            ) : null}
+            {timeline.syncing ? (
+              <Alert severity="info" sx={{ mx: 2, mt: 1.5 }}>
+                Syncing the latest messages...
               </Alert>
             ) : null}
             {timeline.error ? (
@@ -1431,7 +1858,7 @@ export function ChatWorkspace() {
                   variant="outlined"
                   sx={{
                     width: "100%",
-                    maxWidth: 760,
+                    maxWidth: 780,
                     borderRadius: 4,
                     p: { xs: 3, md: 4 },
                     bgcolor: alpha("#fff", 0.04),
@@ -1441,66 +1868,36 @@ export function ChatWorkspace() {
                   <Stack spacing={3}>
                     <Box>
                       <Typography color="text.secondary" variant="overline">
-                        Home
+                        Chat home
                       </Typography>
                       <Typography variant="h1" sx={{ mt: 0.5, fontSize: { xs: "1.7rem", md: "2.05rem" } }}>
-                        Start with a room or direct message
+                        Start with a room or contact
                       </Typography>
-                      <Typography color="text.secondary" sx={{ mt: 1.25, maxWidth: 540 }}>
-                        Choose a conversation from the left to load durable history, unread state, and live SignalR updates.
+                      <Typography color="text.secondary" sx={{ mt: 1.25, maxWidth: 560 }}>
+                        Create a room, accept an invite, or send a new contact request to unlock direct messages.
                       </Typography>
-                      {realtimeContract ? (
-                        <Typography color="text.secondary" variant="caption" sx={{ display: "block", mt: 1 }}>
-                          Realtime sync mode: {realtimeContract.syncMode}
-                        </Typography>
-                      ) : null}
                     </Box>
-
-                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-                      <Paper variant="outlined" sx={{ flex: 1, p: 2, borderRadius: 3 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          Rooms
-                        </Typography>
-                        <Typography variant="h3" sx={{ mt: 0.5 }}>
-                          {roomDirectory?.myRooms.length ?? 0}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                          Public and private spaces you can open right away.
-                        </Typography>
-                      </Paper>
-                      <Paper variant="outlined" sx={{ flex: 1, p: 2, borderRadius: 3 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          Direct messages
-                        </Typography>
-                        <Typography variant="h3" sx={{ mt: 0.5 }}>
-                          {directList.length}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                          One-to-one conversations with preserved history and unread state.
-                        </Typography>
-                      </Paper>
-                    </Stack>
 
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
                       <Button onClick={() => setCreateRoomOpen(true)} startIcon={<AddIcon />} variant="contained">
                         Create room
                       </Button>
-                      <Button
-                        onClick={() => {
-                          const firstRoom = publicRooms[0] ?? privateRooms[0];
-                          if (firstRoom) {
-                            handleSelectConversation(toRoomSelection(firstRoom));
-                            return;
-                          }
-
-                          if (filteredDirects[0]) {
-                            handleSelectConversation(toDirectSelection(filteredDirects[0]));
-                          }
-                        }}
-                        variant="outlined"
-                      >
-                        Open first available chat
+                      <Button onClick={() => setFriendRequestOpen(true)} startIcon={<PersonAddIcon />} variant="outlined">
+                        Add contact
                       </Button>
+                    </Stack>
+
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={1.25}>
+                      <QuickMetricCard
+                        label="Pending invites"
+                        value={pendingRoomInvitations.length}
+                        detail="Room invitations waiting for a response."
+                      />
+                      <QuickMetricCard
+                        label="Contact requests"
+                        value={incomingFriendRequests.length}
+                        detail="People who want to start direct messages."
+                      />
                     </Stack>
                   </Stack>
                 </Paper>
@@ -1510,7 +1907,6 @@ export function ChatWorkspace() {
                 <Box
                   onScroll={(event) => {
                     const element = event.currentTarget;
-                    setScrollTop(element.scrollTop);
 
                     if (element.scrollTop < 120 && timeline.nextCursor && !timeline.loadingOlder && !loadOlderPendingRef.current) {
                       loadOlderPendingRef.current = true;
@@ -1536,7 +1932,7 @@ export function ChatWorkspace() {
                     <EmptySurface
                       icon={<MarkUnreadChatAltIcon fontSize="large" />}
                       title="No messages yet"
-                      description="Be the first to send a message in this conversation."
+                      description="Be the first person to send a message in this conversation."
                       compact
                     />
                   ) : (
@@ -1545,7 +1941,7 @@ export function ChatWorkspace() {
                         <Stack direction="row" spacing={1} sx={{ py: 1.5, alignItems: "center", justifyContent: "center" }}>
                           <CircularProgress size={16} />
                           <Typography color="text.secondary" variant="body2">
-                            Loading older messages…
+                            Loading older messages...
                           </Typography>
                         </Stack>
                       ) : !timeline.nextCursor ? (
@@ -1554,18 +1950,19 @@ export function ChatWorkspace() {
                         <OlderMessagesDivider label="Scroll up for older messages" />
                       )}
 
-                      <Box sx={{ position: "relative", height: totalHeight || "auto" }}>
-                        {visibleRange.topPadding > 0 ? <Box sx={{ height: visibleRange.topPadding }} /> : null}
-
-                        {visibleRange.items.map((message, index) => {
-                          const absoluteIndex = visibleRange.startIndex + index;
-                          const showDateDivider = shouldShowDateDivider(timeline.messages, absoluteIndex);
+                      <Stack spacing={0.5}>
+                        {timeline.messages.map((message, index) => {
+                          const showDateDivider = shouldShowDateDivider(timeline.messages, index);
 
                           return (
-                            <Box key={message.messageId}>
-                              {showDateDivider ? (
-                                <DateDivider label={formatDateDivider(message.createdAtUtc)} />
-                              ) : null}
+                            <Box
+                              key={message.messageId}
+                              sx={{
+                                contentVisibility: "auto",
+                                containIntrinsicSize: "220px",
+                              }}
+                            >
+                              {showDateDivider ? <DateDivider label={formatDateDivider(message.createdAtUtc)} /> : null}
 
                               <MessageRow
                                 downloadTargetId={downloadTargetId}
@@ -1592,14 +1989,11 @@ export function ChatWorkspace() {
                             </Box>
                           );
                         })}
-
-                        {visibleRange.bottomPadding > 0 ? <Box sx={{ height: visibleRange.bottomPadding }} /> : null}
-                      </Box>
+                      </Stack>
                     </>
                   )}
                 </Box>
 
-                {/* COMPOSER */}
                 <Box sx={{ px: { xs: 2, md: 2.5 }, pb: { xs: 2, md: 2.5 }, pt: 0 }}>
                   <Paper
                     variant="outlined"
@@ -1616,7 +2010,7 @@ export function ChatWorkspace() {
                           variant="outlined"
                           sx={{
                             px: 1.5,
-                            py: 0.75,
+                            py: 0.9,
                             borderRadius: 2,
                             bgcolor: alpha("#5cc8ff", 0.06),
                             borderColor: alpha("#5cc8ff", 0.14),
@@ -1627,7 +2021,15 @@ export function ChatWorkspace() {
                               <Typography variant="caption" color="text.secondary">
                                 Replying to {replyTarget.authorUserName}
                               </Typography>
-                              <Typography variant="body2" noWrap>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  display: "-webkit-box",
+                                  WebkitBoxOrient: "vertical",
+                                  WebkitLineClamp: 2,
+                                  overflow: "hidden",
+                                }}
+                              >
                                 {replyTarget.text ?? "Attachment"}
                               </Typography>
                             </Box>
@@ -1640,7 +2042,7 @@ export function ChatWorkspace() {
 
                       {editTarget ? (
                         <InlineComposerState
-                          label={`Editing your message`}
+                          label="Editing your message"
                           onClear={() => {
                             setEditTarget(null);
                             setDraftText("");
@@ -1664,7 +2066,7 @@ export function ChatWorkspace() {
                           minRows={3}
                           maxRows={6}
                           fullWidth
-                          disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting}
+                          disabled={selectedConversation.accessMode === "read_only" || messageSubmitting}
                           onChange={(event) => setDraftText(event.target.value)}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" && !event.shiftKey) {
@@ -1673,36 +2075,37 @@ export function ChatWorkspace() {
                             }
                           }}
                           placeholder={
-                            selectedConversation?.accessMode === "read_only"
+                            selectedConversation.accessMode === "read_only"
                               ? "This conversation is read-only."
-                              : `Write a message to ${selectedConversationLabel}`
+                              : `Message ${selectedConversationLabel}`
                           }
                           value={draftText}
                           variant="outlined"
                           slotProps={{ input: { sx: { py: 1 } } }}
                         />
 
-                        <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", mt: 1.25 }}>
-                          <Tooltip title="Add emoji (coming soon)">
+                        <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", mt: 1.25, flexWrap: "wrap" }} useFlexGap>
+                          <Tooltip title="Emoji reactions are not available yet">
                             <span>
                               <IconButton aria-label="Add emoji" disabled size="small">
                                 <EmojiEmotionsOutlinedIcon fontSize="small" />
                               </IconButton>
                             </span>
                           </Tooltip>
+
                           <Tooltip title={editTarget ? "File attachments are disabled while editing" : "Attach file"}>
                             <span>
                               <IconButton
                                 aria-label="Attach file"
                                 component="label"
-                                disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
+                                disabled={selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
                                 size="small"
                               >
                                 <AttachFileIcon fontSize="small" />
                                 <input
                                   accept="image/*,.pdf,.txt,.md,.zip,.json,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                                   hidden
-                                  disabled={!selectedConversation || selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
+                                  disabled={selectedConversation.accessMode === "read_only" || messageSubmitting || !!editTarget}
                                   key={fileInputKey}
                                   onChange={(event) => {
                                     const nextFile = event.target.files?.[0] ?? null;
@@ -1713,19 +2116,19 @@ export function ChatWorkspace() {
                               </IconButton>
                             </span>
                           </Tooltip>
+
                           <Box sx={{ flex: 1 }} />
                           <Typography color="text.secondary" variant="caption" sx={{ mr: 0.5 }}>
                             {selectedConversation.accessMode === "read_only"
-                              ? "Messaging disabled"
+                              ? "Messaging unavailable"
                               : realtimeStatus === "reconnecting"
-                                ? "Sending resumes after reconnect"
+                                ? "We'll send again once live updates reconnect"
                                 : selectedFile
                                   ? "Attachment ready"
                                   : "Enter to send, Shift+Enter for a new line"}
                           </Typography>
                           <Button
                             disabled={
-                              !selectedConversation ||
                               selectedConversation.accessMode === "read_only" ||
                               messageSubmitting ||
                               (!selectedFile && !draftText.trim())
@@ -1736,7 +2139,7 @@ export function ChatWorkspace() {
                             variant="contained"
                             size="medium"
                           >
-                            {messageSubmitting ? "Sending…" : editTarget ? "Save" : "Send"}
+                            {messageSubmitting ? "Sending..." : editTarget ? "Save" : "Send"}
                           </Button>
                         </Stack>
                       </Box>
@@ -1747,22 +2150,20 @@ export function ChatWorkspace() {
             )}
           </Card>
 
-          {/* RIGHT SIDEBAR - Room info / Members */}
-          <Card sx={{ minHeight: { md: "calc(100vh - 120px)" }, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {!activeRoom ? (
-              <Box sx={{ p: 2.5 }}>
-                <EmptySurface
-                  compact
-                  icon={<GroupOutlinedIcon />}
-                  title="Open a room"
-                  description="Details, members, and moderation tools appear here when a room is selected."
-                />
-              </Box>
-            ) : (
+          <Card
+            sx={{
+              gridColumn: { xs: "1", md: "1 / -1", xl: "auto" },
+              minHeight: { xl: "calc(100vh - 124px)" },
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            {activeRoom ? (
               <>
                 <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
                   <Typography variant="overline" color="text.secondary">
-                    Details
+                    Room details
                   </Typography>
                   <Typography variant="h3" sx={{ mt: 0.5 }}>
                     # {activeRoom.name}
@@ -1788,76 +2189,91 @@ export function ChatWorkspace() {
                   ) : null}
                 </Box>
 
-                {activeRoomDetails && activeRoomDetails.admins.length > 0 ? (
-                  <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
-                    <Typography variant="overline" color="text.secondary">
-                      Owner & Admins
-                    </Typography>
-                    <Stack direction="row" spacing={0.5} useFlexGap sx={{ mt: 0.75, flexWrap: "wrap" }}>
-                      {activeRoomDetails.admins.map((admin) => (
-                        <Chip
-                          key={admin.userId}
-                          avatar={
-                            <Avatar sx={{ bgcolor: alpha(admin.isOwner ? "#f08ab7" : "#66c8ff", 0.2), fontSize: "0.75rem" }}>
-                              {admin.userName.slice(0, 1).toUpperCase()}
-                            </Avatar>
-                          }
-                          label={admin.userName}
-                          size="small"
-                          variant="outlined"
-                          color={admin.isOwner ? "secondary" : "default"}
-                        />
-                      ))}
-                    </Stack>
-                  </Box>
-                ) : null}
-
                 <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", p: 2 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.25, justifyContent: "space-between" }}>
-                    <Typography variant="overline" color="text.secondary">
-                      Members ({activeRoomDetails?.members.length ?? activeRoom.memberCount})
-                    </Typography>
-                  </Stack>
-
                   {activeRoomDetailsLoading ? (
-                    <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
-                      <CircularProgress size={20} />
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+                      <CircularProgress size={22} />
                     </Box>
                   ) : activeRoomDetails ? (
-                    <Stack spacing={0.5}>
-                      {activeRoomDetails.members.map((member) => (
-                        <Stack
-                          key={member.userId}
-                          direction="row"
-                          spacing={1.25}
-                          sx={{
-                            alignItems: "center",
-                            px: 1,
-                            py: 0.75,
-                            borderRadius: 1.5,
-                            "&:hover": { bgcolor: alpha("#fff", 0.03) },
-                          }}
-                        >
-                          <Box sx={{ position: "relative" }}>
-                            <Avatar sx={{ width: 30, height: 30, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light", fontSize: "0.8rem" }}>
-                              {member.userName.slice(0, 1).toUpperCase()}
-                            </Avatar>
-                            <PresenceDot state="offline" />
-                          </Box>
-                          <Box sx={{ minWidth: 0, flex: 1 }}>
-                            <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-                              {member.userName}
-                            </Typography>
-                            <Typography color="text.secondary" variant="caption" noWrap>
-                              {member.isOwner ? "Owner" : member.isAdmin ? "Admin" : "Member"}
-                            </Typography>
-                          </Box>
+                    <Stack spacing={2}>
+                      {activeRoomDetails.admins.length > 0 ? (
+                        <Box>
+                          <Typography variant="overline" color="text.secondary">
+                            Owner & admins
+                          </Typography>
+                          <Stack direction="row" spacing={0.5} useFlexGap sx={{ mt: 0.75, flexWrap: "wrap" }}>
+                            {activeRoomDetails.admins.map((admin) => (
+                              <Chip
+                                key={admin.userId}
+                                avatar={
+                                  <Avatar sx={{ bgcolor: alpha(admin.isOwner ? "#f08ab7" : "#66c8ff", 0.2), fontSize: "0.75rem" }}>
+                                    {admin.userName.slice(0, 1).toUpperCase()}
+                                  </Avatar>
+                                }
+                                label={admin.userName}
+                                size="small"
+                                variant="outlined"
+                                color={admin.isOwner ? "secondary" : "default"}
+                              />
+                            ))}
+                          </Stack>
+                        </Box>
+                      ) : null}
+
+                      <Box>
+                        <Typography variant="overline" color="text.secondary">
+                          Members ({activeRoomDetails.members.length})
+                        </Typography>
+                        <Stack spacing={0.5} sx={{ mt: 0.75 }}>
+                          {activeRoomDetails.members.map((member) => (
+                            <Stack
+                              key={member.userId}
+                              direction="row"
+                              spacing={1.25}
+                              sx={{
+                                alignItems: "center",
+                                px: 1,
+                                py: 0.85,
+                                borderRadius: 1.5,
+                                bgcolor: alpha("#fff", 0.02),
+                              }}
+                            >
+                              <Avatar sx={{ width: 30, height: 30, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light", fontSize: "0.8rem" }}>
+                                {member.userName.slice(0, 1).toUpperCase()}
+                              </Avatar>
+                              <Box sx={{ minWidth: 0, flex: 1 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                                  {member.userName}
+                                </Typography>
+                                <Typography color="text.secondary" variant="caption" noWrap>
+                                  {member.isOwner ? "Owner" : member.isAdmin ? "Admin" : "Member"}
+                                </Typography>
+                              </Box>
+                            </Stack>
+                          ))}
                         </Stack>
-                      ))}
+                      </Box>
+
+                      {activeRoomDetails.pendingInvitations.length > 0 ? (
+                        <Box>
+                          <Typography variant="overline" color="text.secondary">
+                            Pending invites
+                          </Typography>
+                          <Stack spacing={0.5} sx={{ mt: 0.75 }}>
+                            {activeRoomDetails.pendingInvitations.map((invitation) => (
+                              <InboxActionCard
+                                key={invitation.id}
+                                label={invitation.invitedUserName}
+                                description={`Invited by ${invitation.invitedByUserName}`}
+                              />
+                            ))}
+                          </Stack>
+                        </Box>
+                      ) : null}
                     </Stack>
                   ) : (
                     <Typography color="text.secondary" variant="body2">
-                      Member list unavailable.
+                      Room details are unavailable right now.
                     </Typography>
                   )}
                 </Box>
@@ -1865,32 +2281,114 @@ export function ChatWorkspace() {
                 <Box sx={{ p: 2, borderTop: "1px solid", borderColor: "divider" }}>
                   <Stack spacing={1}>
                     {activeRoomDetails?.permissions.canInvite ? (
-                      <Button
-                        fullWidth
-                        onClick={() => setInviteOpen(true)}
-                        startIcon={<PersonAddIcon />}
-                        variant="outlined"
-                      >
+                      <Button fullWidth onClick={() => setInviteOpen(true)} startIcon={<PersonAddIcon />} variant="outlined">
                         Invite user
                       </Button>
                     ) : null}
-                    <Button
-                      fullWidth
-                      onClick={() => setRoomManagerOpen(true)}
-                      startIcon={<SettingsIcon />}
-                      variant="contained"
-                    >
+                    <Button fullWidth onClick={() => setRoomManagerOpen(true)} startIcon={<SettingsIcon />} variant="contained">
                       Manage room
                     </Button>
                   </Stack>
                 </Box>
               </>
+            ) : selectedConversation?.kind === "direct" ? (
+              <Box sx={{ p: 2.5 }}>
+                <Stack spacing={2}>
+                  <Box>
+                    <Typography variant="overline" color="text.secondary">
+                      Contact details
+                    </Typography>
+                    <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", mt: 0.75 }}>
+                      <Avatar sx={{ width: 42, height: 42, bgcolor: alpha("#66c8ff", 0.16), color: "primary.light" }}>
+                        {selectedConversation.title.slice(0, 1).toUpperCase()}
+                      </Avatar>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="h3">{selectedConversation.title}</Typography>
+                        <Typography color="text.secondary" variant="body2" sx={{ mt: 0.25 }}>
+                          {selectedConversation.accessMode === "read_only"
+                            ? "History is still visible, but messaging is frozen."
+                            : "Direct messages are available."}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </Box>
+
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    <Chip
+                      label={selectedConversation.accessMode === "read_only" ? "Read only" : "Messaging open"}
+                      size="small"
+                      color={selectedConversation.accessMode === "read_only" ? "warning" : "success"}
+                      variant={selectedConversation.accessMode === "read_only" ? "outlined" : "filled"}
+                    />
+                    {selectedDirectFriend ? <Chip label="Friend" size="small" variant="outlined" /> : null}
+                    {selectedDirectBanIssued ? <Chip label="Blocked by you" size="small" color="error" variant="outlined" /> : null}
+                    {selectedDirectBanReceived ? <Chip label="Blocked by them" size="small" color="error" variant="outlined" /> : null}
+                  </Stack>
+
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+                    <Stack spacing={1.25}>
+                      <DetailMetric
+                        label="Last activity"
+                        value={
+                          selectedConversation.direct.lastMessageAtUtc
+                            ? formatDateTime(selectedConversation.direct.lastMessageAtUtc)
+                            : "No messages yet"
+                        }
+                      />
+                      <DetailMetric label="Unread" value={selectedConversation.direct.unreadCount} />
+                      {selectedDirectFriend ? (
+                        <DetailMetric label="Connected since" value={formatDateTime(selectedDirectFriend.createdAtUtc)} />
+                      ) : null}
+                    </Stack>
+                  </Paper>
+
+                  <Stack spacing={1}>
+                    {selectedDirectFriend ? (
+                      <Button
+                        disabled={contactActionId === `remove-friend-${selectedConversation.title}`}
+                        onClick={() => void handleRemoveFriend(selectedConversation.title)}
+                        startIcon={<PersonOffIcon />}
+                        variant="outlined"
+                      >
+                        {contactActionId === `remove-friend-${selectedConversation.title}` ? "Updating..." : "Remove friend"}
+                      </Button>
+                    ) : null}
+
+                    {selectedDirectBanIssued ? (
+                      <Button
+                        disabled={contactActionId === `unban-${selectedConversation.title}`}
+                        onClick={() => void handleUnbanUser(selectedConversation.title)}
+                        variant="outlined"
+                      >
+                        {contactActionId === `unban-${selectedConversation.title}` ? "Updating..." : "Unblock"}
+                      </Button>
+                    ) : (
+                      <Button
+                        color="error"
+                        disabled={contactActionId === `ban-${selectedConversation.title}`}
+                        onClick={() => void handleBanUser(selectedConversation.title)}
+                        variant="outlined"
+                      >
+                        {contactActionId === `ban-${selectedConversation.title}` ? "Blocking..." : "Block user"}
+                      </Button>
+                    )}
+                  </Stack>
+                </Stack>
+              </Box>
+            ) : (
+              <Box sx={{ p: 2.5 }}>
+                <EmptySurface
+                  compact
+                  icon={<GroupOutlinedIcon />}
+                  title="Keep the side panel focused"
+                  description="Room details or direct-message context will appear here when you open a conversation."
+                />
+              </Box>
             )}
           </Card>
         </Box>
       ) : null}
 
-      {/* CREATE ROOM DIALOG */}
       <Dialog open={createRoomOpen} onClose={() => setCreateRoomOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Create a new room</DialogTitle>
         <Box component="form" onSubmit={handleCreateRoom}>
@@ -1926,13 +2424,12 @@ export function ChatWorkspace() {
           <DialogActions sx={{ px: 3, pb: 2.5 }}>
             <Button onClick={() => setCreateRoomOpen(false)}>Cancel</Button>
             <Button disabled={creatingRoom || !createRoomDraft.name.trim()} type="submit" variant="contained">
-              {creatingRoom ? "Creating…" : "Create room"}
+              {creatingRoom ? "Creating..." : "Create room"}
             </Button>
           </DialogActions>
         </Box>
       </Dialog>
 
-      {/* INVITE USER DIALOG */}
       <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Invite a user</DialogTitle>
         <Box component="form" onSubmit={handleInviteUser}>
@@ -1950,7 +2447,30 @@ export function ChatWorkspace() {
           <DialogActions sx={{ px: 3, pb: 2.5 }}>
             <Button onClick={() => setInviteOpen(false)}>Cancel</Button>
             <Button disabled={invitingUser || !inviteDraft.trim()} type="submit" variant="contained">
-              {invitingUser ? "Sending…" : "Send invite"}
+              {invitingUser ? "Sending..." : "Send invite"}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      <Dialog open={friendRequestOpen} onClose={() => setFriendRequestOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Add a contact</DialogTitle>
+        <Box component="form" onSubmit={handleSendFriendRequest}>
+          <DialogContent>
+            <TextField
+              autoFocus
+              fullWidth
+              label="Username"
+              onChange={(event) => setFriendRequestDraft(event.target.value)}
+              required
+              value={friendRequestDraft}
+              sx={{ mt: 1 }}
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button onClick={() => setFriendRequestOpen(false)}>Cancel</Button>
+            <Button disabled={friendRequestSubmitting || !friendRequestDraft.trim()} type="submit" variant="contained">
+              {friendRequestSubmitting ? "Sending..." : "Send request"}
             </Button>
           </DialogActions>
         </Box>
@@ -1961,7 +2481,10 @@ export function ChatWorkspace() {
           currentUserName={currentUser?.userName ?? null}
           isOpen={roomManagerOpen}
           onClose={() => setRoomManagerOpen(false)}
-          onWorkspaceRefresh={refreshNavigationData}
+          onWorkspaceRefresh={async () => {
+            await refreshNavigationData();
+            await refreshActiveRoomDetails();
+          }}
           room={activeRoom}
         />
       ) : null}
@@ -2044,87 +2567,15 @@ function EmptySurface({ title, description, icon, compact = false }: EmptySurfac
   );
 }
 
-type PresenceState = "online" | "afk" | "offline";
-
-type ConversationRowProps = {
-  label: string;
-  detail: string;
-  active: boolean;
-  onClick: () => void;
-  unreadCount: number;
-  icon?: ReactNode;
-  avatarTone?: "room" | "direct";
-  presence?: PresenceState;
-};
-
-function ConversationRow({
-  label,
-  detail,
-  active,
-  onClick,
-  unreadCount,
-  icon,
-  avatarTone = "room",
-  presence,
-}: ConversationRowProps) {
-  return (
-    <ListItemButton selected={active} onClick={onClick} sx={{ borderRadius: 2, py: 0.75 }}>
-      <Stack direction="row" spacing={1.25} sx={{ width: "100%", alignItems: "center" }}>
-        <Badge badgeContent={unreadCount > 0 ? unreadCount : 0} color="secondary" invisible={unreadCount <= 0}>
-          <Box sx={{ position: "relative" }}>
-            <Avatar
-              sx={{
-                width: 32,
-                height: 32,
-                bgcolor: avatarTone === "direct" ? alpha("#66c8ff", 0.12) : alpha("#f08ab7", 0.12),
-                color: avatarTone === "direct" ? "primary.light" : "secondary.light",
-                fontSize: "0.85rem",
-              }}
-            >
-              {icon ?? label.replace(/^#\s*/, "").slice(0, 1).toUpperCase()}
-            </Avatar>
-            {presence ? <PresenceDot state={presence} /> : null}
-          </Box>
-        </Badge>
-
-        <ListItemText
-          sx={{ my: 0 }}
-          primary={
-            <Typography variant="body2" sx={{ fontWeight: 600, letterSpacing: 0 }} noWrap>
-              {label}
-            </Typography>
-          }
-          secondary={
-            <Typography
-              color={active ? alpha("#fff", 0.76) : "text.secondary"}
-              variant="caption"
-              sx={{
-                display: "block",
-                mt: 0.1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {detail}
-            </Typography>
-          }
-        />
-      </Stack>
-    </ListItemButton>
-  );
-}
-
 type SidebarSectionProps = {
-  id?: string;
   title: string;
   count?: number;
   children: ReactNode;
 };
 
-function SidebarSection({ id, title, count, children }: SidebarSectionProps) {
+function SidebarSection({ title, count, children }: SidebarSectionProps) {
   return (
-    <Box id={id}>
+    <Box>
       <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 0.5, mb: 0.75 }}>
         <Typography variant="overline" color="text.secondary" sx={{ flex: 1, lineHeight: 1.2 }}>
           {title}
@@ -2140,27 +2591,124 @@ function SidebarSection({ id, title, count, children }: SidebarSectionProps) {
   );
 }
 
-const presenceColor: Record<PresenceState, string> = {
-  online: "#3ecf8e",
-  afk: "#f5b840",
-  offline: "#6b7280",
+type ConversationRowProps = {
+  label: string;
+  detail: string;
+  active: boolean;
+  onClick: () => void;
+  unreadCount: number;
+  icon?: ReactNode;
+  avatarTone?: "room" | "direct";
 };
 
-function PresenceDot({ state }: { state: PresenceState }) {
+function ConversationRow({
+  label,
+  detail,
+  active,
+  onClick,
+  unreadCount,
+  icon,
+  avatarTone = "room",
+}: ConversationRowProps) {
   return (
-    <Box
-      sx={{
-        position: "absolute",
-        bottom: -2,
-        right: -2,
-        width: 10,
-        height: 10,
-        borderRadius: "50%",
-        bgcolor: presenceColor[state],
-        border: "2px solid",
-        borderColor: "background.paper",
-      }}
-    />
+    <ListItemButton selected={active} onClick={onClick} sx={{ borderRadius: 2, py: 0.75 }}>
+      <Stack direction="row" spacing={1.25} sx={{ width: "100%", alignItems: "center" }}>
+        <Badge badgeContent={unreadCount > 0 ? unreadCount : 0} color="secondary" invisible={unreadCount <= 0}>
+          <Avatar
+            sx={{
+              width: 32,
+              height: 32,
+              bgcolor: avatarTone === "direct" ? alpha("#66c8ff", 0.12) : alpha("#f08ab7", 0.12),
+              color: avatarTone === "direct" ? "primary.light" : "secondary.light",
+              fontSize: "0.85rem",
+            }}
+          >
+            {icon ?? label.replace(/^#\s*/, "").slice(0, 1).toUpperCase()}
+          </Avatar>
+        </Badge>
+
+        <ListItemText
+          sx={{ my: 0, minWidth: 0 }}
+          primary={
+            <Typography variant="body2" sx={{ fontWeight: 600, letterSpacing: 0 }} noWrap>
+              {label}
+            </Typography>
+          }
+          secondary={
+            <Typography
+              color={active ? alpha("#fff", 0.76) : "text.secondary"}
+              variant="caption"
+              sx={{
+                display: "-webkit-box",
+                mt: 0.15,
+                overflow: "hidden",
+                WebkitBoxOrient: "vertical",
+                WebkitLineClamp: 2,
+              }}
+            >
+              {detail}
+            </Typography>
+          }
+        />
+      </Stack>
+    </ListItemButton>
+  );
+}
+
+function InboxActionCard({
+  label,
+  description,
+  primaryAction,
+  secondaryAction,
+}: {
+  label: string;
+  description: string;
+  primaryAction?: ReactNode;
+  secondaryAction?: ReactNode;
+}) {
+  return (
+    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2.5 }}>
+      <Stack spacing={1}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+            {label}
+          </Typography>
+          <Typography color="text.secondary" variant="caption">
+            {description}
+          </Typography>
+        </Box>
+        {primaryAction || secondaryAction ? (
+          <Stack direction="row" spacing={0.75} sx={{ justifyContent: "flex-start", flexWrap: "wrap" }} useFlexGap>
+            {primaryAction}
+            {secondaryAction}
+          </Stack>
+        ) : null}
+      </Stack>
+    </Paper>
+  );
+}
+
+function QuickMetricCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <Paper variant="outlined" sx={{ flex: 1, p: 2, borderRadius: 3 }}>
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography variant="h3" sx={{ mt: 0.5 }}>
+        {value}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+        {detail}
+      </Typography>
+    </Paper>
   );
 }
 
@@ -2213,6 +2761,27 @@ function DateDivider({ label }: { label: string }) {
   );
 }
 
+function DetailMetric({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Stack
+      direction="row"
+      spacing={1.5}
+      sx={{
+        py: 1,
+        px: 1.25,
+        borderRadius: 2,
+        bgcolor: alpha("#fff", 0.03),
+        justifyContent: "space-between",
+      }}
+    >
+      <Typography color="text.secondary" variant="body2">
+        {label}
+      </Typography>
+      <Typography variant="body2">{value}</Typography>
+    </Stack>
+  );
+}
+
 type MessageRowProps = {
   message: ChatMessageResponse;
   downloadTargetId: string | null;
@@ -2238,7 +2807,6 @@ function MessageRow({
       variant="outlined"
       sx={{
         p: 1.5,
-        mb: 1,
         borderRadius: 3,
         borderColor: alpha("#fff", 0.06),
         bgcolor: message.isDeleted ? alpha("#fff", 0.02) : "transparent",
@@ -2259,8 +2827,8 @@ function MessageRow({
         </Avatar>
 
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
-            <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ alignItems: { md: "center" }, justifyContent: "space-between" }}>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
               <Typography variant="subtitle1">{message.authorUserName}</Typography>
               <Typography color="text.secondary" variant="caption">
                 {formatDateTime(message.createdAtUtc)}
@@ -2269,7 +2837,12 @@ function MessageRow({
               {message.isDeleted ? <Chip size="small" label="Deleted" color="warning" variant="outlined" /> : null}
             </Stack>
 
-            <Stack className="message-actions" direction="row" spacing={0.25} sx={{ opacity: { xs: 1, md: 0 }, transform: "translateY(2px)", transition: "all 160ms ease" }}>
+            <Stack
+              className="message-actions"
+              direction="row"
+              spacing={0.25}
+              sx={{ opacity: { xs: 1, md: 0 }, transform: "translateY(2px)", transition: "all 160ms ease" }}
+            >
               {!message.isDeleted ? (
                 <Tooltip title="Reply">
                   <IconButton aria-label="Reply to message" onClick={onReply} size="small">
@@ -2314,13 +2887,22 @@ function MessageRow({
               <Typography variant="caption" color="text.secondary">
                 Replying to {message.replyPreview.authorUserName}
               </Typography>
-              <Typography variant="body2" sx={{ mt: 0.4 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  mt: 0.4,
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 2,
+                  overflow: "hidden",
+                }}
+              >
                 {message.replyPreview.isDeleted ? "Original message deleted" : message.replyPreview.text}
               </Typography>
             </Paper>
           ) : null}
 
-          <Typography sx={{ mt: 1.1, whiteSpace: "pre-wrap", lineHeight: 1.65 }} variant="body1">
+          <Typography sx={{ mt: 1.1, whiteSpace: "pre-wrap", lineHeight: 1.65, wordBreak: "break-word" }} variant="body1">
             {message.isDeleted ? "Message deleted." : message.text}
           </Typography>
 
@@ -2338,13 +2920,13 @@ function MessageRow({
                     borderColor: alpha("#fff", 0.08),
                   }}
                 >
-                  <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="subtitle2" sx={{ textTransform: "none", letterSpacing: 0 }}>
+                      <Typography variant="subtitle2" sx={{ textTransform: "none", letterSpacing: 0, wordBreak: "break-word" }}>
                         {attachment.originalFileName}
                       </Typography>
                       <Typography color="text.secondary" variant="caption">
-                        {formatBytes(attachment.byteSize)} · {attachment.contentType}
+                    {formatBytes(attachment.byteSize)} - {attachment.contentType}
                       </Typography>
                     </Box>
                     <Button
@@ -2354,7 +2936,7 @@ function MessageRow({
                       startIcon={downloadTargetId === attachment.id ? <CircularProgress color="inherit" size={14} /> : <DownloadIcon fontSize="small" />}
                       variant="outlined"
                     >
-                      {downloadTargetId === attachment.id ? "Downloading…" : "Download"}
+                      {downloadTargetId === attachment.id ? "Downloading..." : "Download"}
                     </Button>
                   </Stack>
                 </Paper>
@@ -2365,67 +2947,6 @@ function MessageRow({
       </Stack>
     </Paper>
   );
-}
-
-function resolveSelection(
-  roomDirectory: RoomDirectoryResponse,
-  directConversations: DirectConversationSummaryResponse[],
-  conversationId: string | null,
-) {
-  if (!conversationId) {
-    return null;
-  }
-
-  const matchingRoom =
-    roomDirectory.myRooms.find((room) => room.conversationId === conversationId) ??
-    roomDirectory.publicCatalog.find((room) => room.conversationId === conversationId && room.isMember);
-
-  if (matchingRoom) {
-    return toRoomSelection(matchingRoom);
-  }
-
-  const matchingDirect = directConversations.find((conversation) => conversation.conversationId === conversationId);
-  if (matchingDirect) {
-    return toDirectSelection(matchingDirect);
-  }
-
-  return null;
-}
-
-function sameConversation(left: SelectedConversation | null, right: SelectedConversation | null) {
-  return left?.conversationId === right?.conversationId;
-}
-
-function toRoomSelection(room: RoomListItemResponse): SelectedConversation {
-  return {
-    kind: "room",
-    conversationId: room.conversationId,
-    roomId: room.id,
-    title: room.name,
-    subtitle:
-      room.lastMessagePreview ??
-      room.description ??
-      `${room.memberCount} members in this ${room.isPrivate ? "private" : "public"} room.`,
-    accessMode: "read_write",
-    room,
-  };
-}
-
-function toDirectSelection(direct: DirectConversationSummaryResponse): SelectedConversation {
-  const accessMode = direct.accessMode === "read_only" ? "read_only" : "read_write";
-
-  return {
-    kind: "direct",
-    conversationId: direct.conversationId,
-    targetUserId: direct.targetUserId,
-    title: direct.targetUserName,
-    subtitle:
-      accessMode === "read_only"
-        ? "History is visible, but new direct messages are frozen by policy."
-        : direct.lastMessagePreview ?? "Direct messaging is available because friendship is confirmed.",
-    accessMode,
-    direct,
-  };
 }
 
 function mergeOlderMessages(older: ChatMessageResponse[], newer: ChatMessageResponse[]) {
@@ -2492,7 +3013,7 @@ function labelForRealtimeState(state: RealtimeStatus) {
   }
 
   if (state === "connected") {
-    return "Connected";
+    return "Live";
   }
 
   if (state === "reconnecting") {
@@ -2500,10 +3021,10 @@ function labelForRealtimeState(state: RealtimeStatus) {
   }
 
   if (state === "error") {
-    return "Needs retry";
+    return "Retrying";
   }
 
-  return "Disconnected";
+  return "Offline";
 }
 
 function formatDateTime(value: string) {
@@ -2525,6 +3046,42 @@ function formatBytes(value: number) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function toPresenceState(value?: string | null): PresenceState {
+  if (value === "online") {
+    return "online";
+  }
+
+  if (value === "afk") {
+    return "afk";
+  }
+
+  return "offline";
+}
+
+function presenceColor(state: PresenceState) {
+  if (state === "online") {
+    return "success";
+  }
+
+  if (state === "afk") {
+    return "warning";
+  }
+
+  return "default";
+}
+
+function toPresenceLabel(state: PresenceState) {
+  if (state === "online") {
+    return "Online";
+  }
+
+  if (state === "afk") {
+    return "Away";
+  }
+
+  return "Offline";
+}
+
 function isUnauthorized(error: unknown) {
   return error instanceof ApiClientError && error.status === 401;
 }
@@ -2539,4 +3096,14 @@ function getErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function useStableEvent<TArgs extends unknown[], TResult>(handler: (...args: TArgs) => TResult) {
+  const handlerRef = useRef(handler);
+
+  useEffect(() => {
+    handlerRef.current = handler;
+  }, [handler]);
+
+  return useCallback((...args: TArgs) => handlerRef.current(...args), []);
 }

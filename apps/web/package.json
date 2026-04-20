@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "next lint",
-    "test": "node -e \"console.log('No frontend tests configured yet.')\""
+    "test": "node --experimental-strip-types tests/chat-shell-state.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

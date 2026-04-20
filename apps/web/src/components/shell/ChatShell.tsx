@@ -5,11 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   AccountCircleOutlined as AccountCircleOutlinedIcon,
-  ChatBubbleOutlined as ChatBubbleOutlineIcon,
+  ChatBubbleOutlineOutlined as ChatBubbleOutlineIcon,
   Forum as ForumIcon,
-  HomeOutlined as HomeOutlinedIcon,
   Logout as LogoutIcon,
-  Search as SearchIcon,
   SensorsOutlined as SensorsOutlinedIcon,
   TabletMacOutlined as TabletMacOutlinedIcon,
 } from "@mui/icons-material";
@@ -20,13 +18,11 @@ import {
   Button,
   Divider,
   IconButton,
-  InputAdornment,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
   Stack,
-  TextField,
   Toolbar,
   Typography,
 } from "@mui/material";
@@ -39,11 +35,16 @@ type ChatShellProps = {
 };
 
 const navigationItems = [
-  { href: "/", label: "Home", icon: <HomeOutlinedIcon fontSize="small" /> },
   { href: "/chat", label: "Chat", icon: <ChatBubbleOutlineIcon fontSize="small" /> },
   { href: "/sessions", label: "Sessions", icon: <TabletMacOutlinedIcon fontSize="small" /> },
   { href: "/presence", label: "Presence", icon: <SensorsOutlinedIcon fontSize="small" /> },
 ];
+
+const pageCopy: Record<string, { eyebrow: string; title: string }> = {
+  "/chat": { eyebrow: "Workspace", title: "Conversations" },
+  "/sessions": { eyebrow: "Security", title: "Sessions" },
+  "/presence": { eyebrow: "Status", title: "Presence" },
+};
 
 export function ChatShell({ children }: ChatShellProps) {
   const router = useRouter();
@@ -93,15 +94,17 @@ export function ChatShell({ children }: ChatShellProps) {
   }
 
   const initials = (currentUser?.userName ?? "?").slice(0, 1).toUpperCase();
-  const activeLabel = useMemo(
-    () => navigationItems.find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))?.label ?? "Chat",
+  const activeNavigation = useMemo(
+    () =>
+      navigationItems.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) ?? navigationItems[0],
     [pathname],
   );
+  const currentPageCopy = pageCopy[activeNavigation.href] ?? pageCopy["/chat"];
 
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <AppBar position="sticky" color="transparent">
-        <Toolbar sx={{ gap: 2, minHeight: 72, px: { xs: 1.5, md: 2.5 } }}>
+        <Toolbar sx={{ gap: 2, minHeight: 76, px: { xs: 1.5, md: 2.5 } }}>
           <Stack
             component={Link}
             href="/chat"
@@ -111,61 +114,48 @@ export function ChatShell({ children }: ChatShellProps) {
               alignItems: "center",
               textDecoration: "none",
               color: "inherit",
-              minWidth: "fit-content",
+              minWidth: 0,
+              flexShrink: 0,
             }}
           >
             <Box
               sx={{
-                width: 36,
-                height: 36,
+                width: 38,
+                height: 38,
                 borderRadius: 2.5,
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
                 background: "linear-gradient(160deg, rgba(104,124,255,0.95), rgba(77,178,255,0.95))",
                 color: "common.white",
-                boxShadow: `0 10px 24px ${alpha("#587dff", 0.26)}`,
+                boxShadow: `0 10px 24px ${alpha("#587dff", 0.24)}`,
               }}
             >
               <ForumIcon fontSize="small" />
             </Box>
-            <Box sx={{ display: { xs: "none", sm: "block" } }}>
-              <Typography variant="h3" sx={{ fontSize: "1rem" }}>
-                DataArt Chat
+
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.1 }}>
+                {currentPageCopy.eyebrow}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {activeLabel}
+              <Typography variant="h3" sx={{ fontSize: "1rem" }}>
+                {currentPageCopy.title}
               </Typography>
             </Box>
           </Stack>
 
-          <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
-            <TextField
-              aria-label="Search"
-              placeholder="Search"
-              size="small"
-              value=""
-              sx={{
-                width: "100%",
-                maxWidth: 420,
-                display: { xs: "none", md: "flex" },
-              }}
-              slotProps={{
-                input: {
-                  readOnly: true,
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
-          </Box>
-
-          <Stack direction="row" spacing={0.75} sx={{ display: { xs: "none", lg: "flex" }, alignItems: "center" }}>
+          <Stack
+            direction="row"
+            spacing={0.75}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              justifyContent: "center",
+              display: { xs: "none", md: "flex" },
+            }}
+          >
             {navigationItems.map((item) => {
-              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+              const active = item.href === activeNavigation.href;
 
               return (
                 <Button
@@ -191,14 +181,14 @@ export function ChatShell({ children }: ChatShellProps) {
             aria-label="Open account menu"
             onClick={(event) => setProfileAnchorEl(event.currentTarget)}
             sx={{
-              ml: { xs: 0, md: 1 },
               border: "1px solid",
               borderColor: "divider",
               borderRadius: 3,
               px: 0.75,
+              minWidth: 0,
             }}
           >
-            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
               <Avatar
                 sx={{
                   width: 30,
@@ -211,11 +201,12 @@ export function ChatShell({ children }: ChatShellProps) {
               >
                 {initials}
               </Avatar>
-              <Box sx={{ display: { xs: "none", sm: "block" }, textAlign: "left" }}>
-                <Typography variant="body2" sx={{ lineHeight: 1.1, fontWeight: 700 }}>
+
+              <Box sx={{ display: { xs: "none", sm: "block" }, minWidth: 0, textAlign: "left" }}>
+                <Typography noWrap variant="body2" sx={{ lineHeight: 1.1, fontWeight: 700 }}>
                   {currentUser?.userName ?? "Account"}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography noWrap variant="caption" color="text.secondary">
                   {currentUser?.email ?? "Loading account"}
                 </Typography>
               </Box>
@@ -237,11 +228,23 @@ export function ChatShell({ children }: ChatShellProps) {
               </Typography>
             </Box>
             <Divider />
+            <MenuItem component={Link} href="/presence">
+              <ListItemIcon>
+                <SensorsOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Status</ListItemText>
+            </MenuItem>
+            <MenuItem component={Link} href="/sessions">
+              <ListItemIcon>
+                <TabletMacOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Sessions</ListItemText>
+            </MenuItem>
             <MenuItem component={Link} href="/auth">
               <ListItemIcon>
                 <AccountCircleOutlinedIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>View account</ListItemText>
+              <ListItemText>Account</ListItemText>
             </MenuItem>
             <MenuItem onClick={() => void handleSignOut()} disabled={signingOut}>
               <ListItemIcon>
