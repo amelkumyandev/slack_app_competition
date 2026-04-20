@@ -1,0 +1,12 @@
+docker compose down -v --remove-orphans
+docker builder prune -af
+docker system prune -af
+docker volume prune -f
+
+Remove-Item -Recurse -Force .\apps\web\node_modules -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .\apps\web\.next -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .\apps\web\dist -ErrorAction SilentlyContinue
+npm cache clean --force
+
+docker compose build --no-cache
+docker compose up --force-recreate
