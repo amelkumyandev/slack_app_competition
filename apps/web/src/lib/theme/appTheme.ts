@@ -4,33 +4,33 @@ export const appTheme = createTheme({
   palette: {
     mode: "dark",
     primary: {
-      main: "#66c8ff",
-      light: "#9cdbff",
-      dark: "#2e8bd6",
+      main: "#7c88f6",
+      light: "#a8b2ff",
+      dark: "#5f6cd8",
     },
     secondary: {
-      main: "#f08ab7",
-      light: "#f4b0cf",
-      dark: "#b45e87",
+      main: "#66b7ff",
+      light: "#92ccff",
+      dark: "#418fda",
     },
     success: {
-      main: "#41d18a",
+      main: "#34c77b",
     },
     warning: {
-      main: "#f6b661",
+      main: "#f0b14f",
     },
     error: {
-      main: "#ff7d7d",
+      main: "#ef7676",
     },
     background: {
-      default: "#111318",
-      paper: "#171a21",
+      default: "#0f141c",
+      paper: "#151b24",
     },
     text: {
-      primary: "#f4f7fb",
-      secondary: "#aeb7c8",
+      primary: "#edf2fb",
+      secondary: "#98a3b6",
     },
-    divider: "rgba(255,255,255,0.08)",
+    divider: "rgba(255,255,255,0.07)",
   },
   shape: {
     borderRadius: 16,
@@ -96,7 +96,7 @@ export const appTheme = createTheme({
       styleOverrides: {
         body: {
           background:
-            "radial-gradient(circle at top right, rgba(117, 55, 133, 0.24), transparent 26rem), radial-gradient(circle at top left, rgba(47, 130, 196, 0.18), transparent 22rem), #111318",
+            "radial-gradient(circle at top right, rgba(82, 101, 214, 0.18), transparent 24rem), radial-gradient(circle at top left, rgba(59, 106, 159, 0.12), transparent 22rem), #0f141c",
         },
         "::selection": {
           background: "rgba(102, 200, 255, 0.3)",
@@ -106,10 +106,10 @@ export const appTheme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          backgroundColor: alpha("#0f1117", 0.86),
-          backdropFilter: "blur(18px)",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          boxShadow: "0 12px 30px rgba(0,0,0,0.28)",
+          backgroundColor: alpha("#10161f", 0.9),
+          backdropFilter: "blur(16px)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
         },
       },
     },
@@ -127,8 +127,8 @@ export const appTheme = createTheme({
       styleOverrides: {
         root: {
           border: "1px solid rgba(255,255,255,0.08)",
-          backgroundColor: alpha("#171a21", 0.92),
-          boxShadow: "0 18px 44px rgba(4, 8, 20, 0.28)",
+          backgroundColor: alpha("#151b24", 0.94),
+          boxShadow: "0 12px 28px rgba(4, 8, 20, 0.2)",
         },
       },
     },
@@ -140,10 +140,10 @@ export const appTheme = createTheme({
         {
           props: { variant: "contained", color: "primary" },
           style: {
-            background: "linear-gradient(135deg, #2d7bd6, #5cc8ff)",
-            color: "#08111b",
+            background: "linear-gradient(135deg, #6674df, #8392ff)",
+            color: "#f8fbff",
             "&:hover": {
-              background: "linear-gradient(135deg, #3784df, #7dd6ff)",
+              background: "linear-gradient(135deg, #7180ec, #95a2ff)",
             },
           },
         },
@@ -154,10 +154,10 @@ export const appTheme = createTheme({
           paddingInline: 16,
         },
         outlined: {
-          borderColor: "rgba(255,255,255,0.12)",
+          borderColor: "rgba(255,255,255,0.1)",
         },
         text: {
-          color: "#c8d2e4",
+          color: "#c7d0e0",
         },
       },
     },
@@ -226,13 +226,13 @@ export const appTheme = createTheme({
           paddingInline: 12,
           border: "1px solid transparent",
           "&:hover": {
-            backgroundColor: alpha("#ffffff", 0.04),
+            backgroundColor: alpha("#ffffff", 0.035),
           },
           "&.Mui-selected": {
-            backgroundColor: alpha("#7f3f98", 0.22),
-            borderColor: alpha("#7f3f98", 0.45),
+            backgroundColor: alpha("#7c88f6", 0.16),
+            borderColor: alpha("#7c88f6", 0.26),
             "&:hover": {
-              backgroundColor: alpha("#7f3f98", 0.28),
+              backgroundColor: alpha("#7c88f6", 0.22),
             },
           },
         },
@@ -242,16 +242,16 @@ export const appTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 14,
-          backgroundColor: alpha("#ffffff", 0.03),
+          backgroundColor: alpha("#ffffff", 0.028),
           "& .MuiOutlinedInput-notchedOutline": {
-            borderColor: "rgba(255,255,255,0.1)",
+            borderColor: "rgba(255,255,255,0.08)",
           },
           "&:hover .MuiOutlinedInput-notchedOutline": {
-            borderColor: "rgba(255,255,255,0.18)",
+            borderColor: "rgba(255,255,255,0.14)",
           },
           "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-            borderColor: "#5cc8ff",
-            boxShadow: "0 0 0 3px rgba(92, 200, 255, 0.14)",
+            borderColor: "#7c88f6",
+            boxShadow: "0 0 0 3px rgba(124, 136, 246, 0.14)",
           },
         },
       },

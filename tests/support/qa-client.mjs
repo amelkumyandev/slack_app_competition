@@ -16,6 +16,12 @@ export function ensure(condition, message) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export async function assertStatus(response, expectedStatus, context) {
   if (response.status === expectedStatus) {
     return;
@@ -160,10 +166,18 @@ export async function sendFriendRequest(requesterSession, targetUserName) {
 }
 
 export async function acceptIncomingFriendRequest(session, targetUserName) {
-  const contacts = await session.getJson("/api/contacts", `load contacts for ${targetUserName}`);
-  const incomingRequest = contacts.incomingFriendRequests.find(
-    (candidate) => candidate.userName === targetUserName
-  );
+  let incomingRequest = null;
+
+  for (let attempt = 0; attempt < 6 && !incomingRequest; attempt += 1) {
+    const contacts = await session.getJson("/api/contacts", `load contacts for ${targetUserName}`);
+    incomingRequest = contacts.incomingFriendRequests.find(
+      (candidate) => candidate.requesterUserName === targetUserName || candidate.userName === targetUserName
+    );
+
+    if (!incomingRequest) {
+      await sleep(300);
+    }
+  }
 
   ensure(incomingRequest, `No incoming friend request found from ${targetUserName}.`);
 

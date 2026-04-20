@@ -29,6 +29,7 @@ async function main() {
 
   const ownerSession = new QaSession(apiBaseUrl);
   const memberSession = new QaSession(apiBaseUrl);
+  const runId = Date.now().toString(36);
 
   const owner = await registerUser(ownerSession, "smoke-owner");
   const member = await registerUser(memberSession, "smoke-member");
@@ -39,7 +40,7 @@ async function main() {
   const sessions = await ownerSession.getJson("/api/sessions", "load sessions");
   ensure(Array.isArray(sessions.sessions) && sessions.sessions.length >= 1, "Expected at least one persisted session.");
 
-  const room = await createRoom(ownerSession, "Smoke Room", "Docker smoke coverage");
+  const room = await createRoom(ownerSession, `Smoke Room ${runId}`, "Docker smoke coverage");
   await joinRoom(memberSession, room.id);
 
   const firstRoomMessage = await postMessage(ownerSession, room.conversationId, "Smoke room hello");

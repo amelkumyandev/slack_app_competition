@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowDropDown as ArrowDropDownIcon,
+  AccountCircleOutlined as AccountCircleOutlinedIcon,
+  ChatBubbleOutlined as ChatBubbleOutlineIcon,
   Forum as ForumIcon,
+  HomeOutlined as HomeOutlinedIcon,
   Logout as LogoutIcon,
+  Search as SearchIcon,
+  SensorsOutlined as SensorsOutlinedIcon,
+  TabletMacOutlined as TabletMacOutlinedIcon,
 } from "@mui/icons-material";
 import {
   AppBar,
@@ -15,14 +20,17 @@ import {
   Button,
   Divider,
   IconButton,
+  InputAdornment,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
   Stack,
+  TextField,
   Toolbar,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { ApiClientError, apiRequest } from "@/lib/api/client";
 import type { CurrentUserResponse, MessageResponse } from "@/lib/api/contracts";
 
@@ -30,8 +38,16 @@ type ChatShellProps = {
   children: React.ReactNode;
 };
 
+const navigationItems = [
+  { href: "/", label: "Home", icon: <HomeOutlinedIcon fontSize="small" /> },
+  { href: "/chat", label: "Chat", icon: <ChatBubbleOutlineIcon fontSize="small" /> },
+  { href: "/sessions", label: "Sessions", icon: <TabletMacOutlinedIcon fontSize="small" /> },
+  { href: "/presence", label: "Presence", icon: <SensorsOutlinedIcon fontSize="small" /> },
+];
+
 export function ChatShell({ children }: ChatShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [profileAnchorEl, setProfileAnchorEl] = useState<HTMLElement | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -60,14 +76,6 @@ export function ChatShell({ children }: ChatShellProps) {
     };
   }, [router]);
 
-  function handleScrollToSection(sectionId: string) {
-    const element = document.getElementById(sectionId);
-
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
-
   async function handleSignOut() {
     setSigningOut(true);
 
@@ -76,7 +84,7 @@ export function ChatShell({ children }: ChatShellProps) {
         method: "POST",
       });
     } catch {
-      // Even if the API call fails, we still redirect to sign-in.
+      // Redirect to sign-in even if the current session is already invalid.
     } finally {
       setSigningOut(false);
       setProfileAnchorEl(null);
@@ -85,11 +93,15 @@ export function ChatShell({ children }: ChatShellProps) {
   }
 
   const initials = (currentUser?.userName ?? "?").slice(0, 1).toUpperCase();
+  const activeLabel = useMemo(
+    () => navigationItems.find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))?.label ?? "Chat",
+    [pathname],
+  );
 
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <AppBar position="sticky" color="transparent">
-        <Toolbar sx={{ gap: 2, minHeight: 72 }}>
+        <Toolbar sx={{ gap: 2, minHeight: 72, px: { xs: 1.5, md: 2.5 } }}>
           <Stack
             component={Link}
             href="/chat"
@@ -99,131 +111,149 @@ export function ChatShell({ children }: ChatShellProps) {
               alignItems: "center",
               textDecoration: "none",
               color: "inherit",
+              minWidth: "fit-content",
             }}
           >
             <Box
               sx={{
-                width: 38,
-                height: 38,
-                borderRadius: 2,
+                width: 36,
+                height: 36,
+                borderRadius: 2.5,
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                background: "linear-gradient(135deg, #2d7bd6, #f08ab7)",
+                background: "linear-gradient(160deg, rgba(104,124,255,0.95), rgba(77,178,255,0.95))",
                 color: "common.white",
+                boxShadow: `0 10px 24px ${alpha("#587dff", 0.26)}`,
               }}
             >
               <ForumIcon fontSize="small" />
             </Box>
-            <Typography variant="h3" sx={{ letterSpacing: "-0.03em" }}>
-              ChatLogo
-            </Typography>
+            <Box sx={{ display: { xs: "none", sm: "block" } }}>
+              <Typography variant="h3" sx={{ fontSize: "1rem" }}>
+                DataArt Chat
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {activeLabel}
+              </Typography>
+            </Box>
           </Stack>
 
-          <Stack
-            component="nav"
-            direction="row"
-            spacing={0.5}
-            sx={{
-              ml: 2,
-              flex: 1,
-              display: { xs: "none", md: "flex" },
-            }}
-          >
-            <Button color="inherit" onClick={() => handleScrollToSection("public-rooms")}>
-              Public Rooms
-            </Button>
-            <Button color="inherit" onClick={() => handleScrollToSection("private-rooms")}>
-              Private Rooms
-            </Button>
-            <Button color="inherit" onClick={() => handleScrollToSection("contacts")}>
-              Contacts
-            </Button>
-          </Stack>
-
-          <Box sx={{ flex: 1, display: { xs: "block", md: "none" } }} />
-
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-            <Button
-              onClick={(event) => setProfileAnchorEl(event.currentTarget)}
+          <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
+            <TextField
+              aria-label="Search"
+              placeholder="Search"
+              size="small"
+              value=""
               sx={{
-                color: "text.primary",
-                px: 1,
-                textTransform: "none",
+                width: "100%",
+                maxWidth: 420,
+                display: { xs: "none", md: "flex" },
               }}
-              endIcon={<ArrowDropDownIcon />}
-            >
-              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                <Avatar
+              slotProps={{
+                input: {
+                  readOnly: true,
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          </Box>
+
+          <Stack direction="row" spacing={0.75} sx={{ display: { xs: "none", lg: "flex" }, alignItems: "center" }}>
+            {navigationItems.map((item) => {
+              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+
+              return (
+                <Button
+                  key={item.href}
+                  component={Link}
+                  href={item.href}
+                  startIcon={item.icon}
+                  variant={active ? "contained" : "text"}
+                  color={active ? "primary" : "inherit"}
                   sx={{
-                    width: 30,
-                    height: 30,
-                    bgcolor: "rgba(127, 63, 152, 0.34)",
-                    color: "secondary.light",
-                    fontWeight: 700,
-                    fontSize: "0.85rem",
+                    minWidth: "fit-content",
+                    px: 1.5,
+                    color: active ? "common.white" : "text.secondary",
                   }}
                 >
-                  {initials}
-                </Avatar>
-                <Box sx={{ textAlign: "left", display: { xs: "none", sm: "block" } }}>
-                  <Typography variant="body2" sx={{ lineHeight: 1.1, fontWeight: 700 }}>
-                    {currentUser?.userName ?? "Profile"}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Account
-                  </Typography>
-                </Box>
-              </Stack>
-            </Button>
-
-            <IconButton
-              aria-label="Sign out"
-              onClick={() => void handleSignOut()}
-              disabled={signingOut}
-              sx={{ display: { xs: "inline-flex", sm: "none" } }}
-            >
-              <LogoutIcon />
-            </IconButton>
-            <Button
-              startIcon={<LogoutIcon />}
-              onClick={() => void handleSignOut()}
-              disabled={signingOut}
-              variant="outlined"
-              sx={{ display: { xs: "none", sm: "inline-flex" } }}
-            >
-              {signingOut ? "Signing out…" : "Sign out"}
-            </Button>
+                  {item.label}
+                </Button>
+              );
+            })}
           </Stack>
+
+          <IconButton
+            aria-label="Open account menu"
+            onClick={(event) => setProfileAnchorEl(event.currentTarget)}
+            sx={{
+              ml: { xs: 0, md: 1 },
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 3,
+              px: 0.75,
+            }}
+          >
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <Avatar
+                sx={{
+                  width: 30,
+                  height: 30,
+                  bgcolor: alpha("#587dff", 0.18),
+                  color: "primary.light",
+                  fontWeight: 700,
+                  fontSize: "0.85rem",
+                }}
+              >
+                {initials}
+              </Avatar>
+              <Box sx={{ display: { xs: "none", sm: "block" }, textAlign: "left" }}>
+                <Typography variant="body2" sx={{ lineHeight: 1.1, fontWeight: 700 }}>
+                  {currentUser?.userName ?? "Account"}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {currentUser?.email ?? "Loading account"}
+                </Typography>
+              </Box>
+            </Stack>
+          </IconButton>
 
           <Menu
             anchorEl={profileAnchorEl}
             open={Boolean(profileAnchorEl)}
             onClose={() => setProfileAnchorEl(null)}
             slotProps={{
-              paper: { sx: { mt: 1, minWidth: 220 } },
+              paper: { sx: { mt: 1, minWidth: 240 } },
             }}
           >
             <Box sx={{ px: 2, py: 1.5 }}>
-              <Typography variant="subtitle1">{currentUser?.userName ?? "Loading…"}</Typography>
+              <Typography variant="subtitle1">{currentUser?.userName ?? "Loading..."}</Typography>
               <Typography variant="caption" color="text.secondary">
                 {currentUser?.email ?? ""}
               </Typography>
             </Box>
             <Divider />
+            <MenuItem component={Link} href="/auth">
+              <ListItemIcon>
+                <AccountCircleOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>View account</ListItemText>
+            </MenuItem>
             <MenuItem onClick={() => void handleSignOut()} disabled={signingOut}>
               <ListItemIcon>
                 <LogoutIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>{signingOut ? "Signing out…" : "Sign out"}</ListItemText>
+              <ListItemText>{signingOut ? "Signing out..." : "Sign out"}</ListItemText>
             </MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        {children}
-      </Box>
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{children}</Box>
     </Box>
   );
 }
